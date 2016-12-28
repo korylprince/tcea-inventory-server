@@ -12,18 +12,18 @@ import (
 func NewRouter(ctx context.Context, s SessionStore, db *sql.DB) http.Handler {
 	r := mux.NewRouter()
 
-	//catch-all
-	//	r.PathPrefix("/").HandlerFunc(notFoundHandler)
+	r.Path("/statuses/").Methods("GET").HandlerFunc(handleReadStatuses)
 
 	r.Path("/models/").Methods("POST").HandlerFunc(handleCreateModel)
 	r.Path("/models/{id:[0-9]+}").Methods("GET").HandlerFunc(handleReadModel)
 	r.Path("/models/{id:[0-9]+}").Methods("POST").HandlerFunc(handleUpdateModel)
 	r.Path("/models/{id:[0-9]+}/notes").Methods("POST").HandlerFunc(handleCreateModelNoteEvent)
+	r.Path("/models/").Methods("GET").HandlerFunc(handleReadModels)
 
 	r.Path("/devices/").Methods("POST").HandlerFunc(handleCreateDevice)
 	r.Path("/devices/{id:[0-9]+}").Methods("GET").HandlerFunc(handleReadDevice)
 	r.Path("/devices/{id:[0-9]+}").Methods("POST").HandlerFunc(handleUpdateDevice)
-	r.Path("/devices/{id:[0-9]+}/notes").Methods("POST").HandlerFunc(handleCreateDeviceNoteEvent)
+	r.Path("/devices/{id:[0-9]+}/notes/").Methods("POST").HandlerFunc(handleCreateDeviceNoteEvent)
 
 	r.Path("/users/").Methods("POST").HandlerFunc(handleCreateUserWithCredentials)
 	r.Path("/users/{id:[0-9]+}").Methods("GET").HandlerFunc(handleReadUser)

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/mail"
 
+	"github.com/go-sql-driver/mysql"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -83,6 +85,13 @@ func CreateUser(ctx context.Context, user *User) (id int64, err error) {
 
 	res, err := tx.Exec("INSERT INTO user(email, hash, name) VALUES(?, ?, ?);", user.Email, user.Hash, user.Name)
 	if err != nil {
+		if e, ok := err.(*mysql.MySQLError); ok && e.Number == 1062 {
+			dup, newErr := ReadUserByEmail(ctx, user.Email)
+			if newErr != nil {
+				return 0, newErr
+			}
+			return 0, &Error{Description: "Could not insert User", Type: ErrorTypeDuplicate, Err: err, DuplicateID: dup.ID}
+		}
 		return 0, &Error{Description: "Could not insert User", Type: ErrorTypeServer, Err: err}
 	}
 
@@ -140,8 +149,15 @@ func UpdateUser(ctx context.Context, user *User) error {
 		return &Error{Description: "Could not validate User", Type: ErrorTypeUser, Err: err}
 	}
 
-	_, err := tx.Exec("UPDATE user SET email=?, hash=?, name=? WHERE id=?;", user.Email, user.Hash, user.Name)
+	_, err := tx.Exec("UPDATE user SET email=?, hash=?, name=? WHERE id=?;", user.Email, user.Hash, user.Name, user.ID)
 	if err != nil {
+		if e, ok := err.(*mysql.MySQLError); ok && e.Number == 1062 {
+			dup, newErr := ReadUserByEmail(ctx, user.Email)
+			if newErr != nil {
+				return newErr
+			}
+			return &Error{Description: fmt.Sprintf("Could not update User(%d)", user.ID), Type: ErrorTypeDuplicate, Err: err, DuplicateID: dup.ID}
+		}
 		return &Error{Description: fmt.Sprintf("Could not update User(%d)", user.ID), Type: ErrorTypeServer, Err: err}
 	}
 

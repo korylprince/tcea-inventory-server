@@ -9,7 +9,7 @@ import (
 
 //Config represents options given in the environment
 type Config struct {
-	SessionDuration int //in hours; default: 24
+	SessionExpiration int //in minutes; default: 60
 
 	SQLDriver string //required
 	SQLDSN    string //required
@@ -32,8 +32,8 @@ func init() {
 		log.Fatalln("Error reading configuration from environment:", err)
 	}
 
-	if config.SessionDuration == 0 {
-		config.SessionDuration = 24
+	if config.SessionExpiration == 0 {
+		config.SessionExpiration = 60
 	}
 
 	checkEmpty(config.SQLDriver, "SQLDRIVER")

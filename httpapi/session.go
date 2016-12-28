@@ -75,6 +75,7 @@ func (m *MemorySessionStore) Check(sessionID string) (session *Session, err erro
 	defer m.mu.Unlock()
 	if s, ok := m.store[sessionID]; ok {
 		if s.Expires.After(time.Now()) {
+			s.Expires = time.Now().Add(m.duration)
 			return s, nil
 		}
 		delete(m.store, sessionID)

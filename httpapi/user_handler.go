@@ -207,18 +207,23 @@ func handleAuthenticate(s SessionStore) http.HandlerFunc {
 			return
 		}
 
+		if req.Email == "" || req.Password == "" {
+			handleError(w, r, http.StatusBadRequest, errors.New("email or password empty"))
+			return
+		}
+
 		user, err := api.ReadUserByEmail(r.Context(), req.Email)
 		if !checkAPIError(w, r, err) {
 			return
 		}
 		if user == nil {
-			handleError(w, r, http.StatusNotFound, errors.New("Could not find user"))
+			handleError(w, r, http.StatusUnauthorized, errors.New("Could not find user"))
 			return
 		}
 
 		err = user.Authenticate(r.Context(), req.Password)
 		if err != nil {
-			handleError(w, r, http.StatusForbidden, fmt.Errorf("Could not authenticate user: %v", err))
+			handleError(w, r, http.StatusUnauthorized, fmt.Errorf("Could not authenticate user: %v", err))
 			return
 		}
 

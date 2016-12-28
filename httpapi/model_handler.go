@@ -183,3 +183,29 @@ func handleCreateModelNoteEvent(w http.ResponseWriter, r *http.Request) {
 		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
 	}
 }
+
+//GET /models/
+func handleReadModels(w http.ResponseWriter, r *http.Request) {
+	includeEvents := false
+	if v := r.URL.Query().Get("events"); v == "true" {
+		includeEvents = true
+	}
+
+	models, err := api.ReadModels(r.Context(), includeEvents)
+	if !checkAPIError(w, r, err) {
+		return
+	}
+
+	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
+	err = tx.Commit()
+	if err != nil {
+		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
+		return
+	}
+
+	e := json.NewEncoder(w)
+	err = e.Encode(&ReadModelsResponse{Models: models})
+	if err != nil {
+		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
+	}
+}

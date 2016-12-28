@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -19,8 +20,10 @@ type NoteContent struct {
 	Note string `json:"note"`
 }
 
-//Validate validates the given NoteContent
+//Validate cleans and validates the given NoteContent
 func (c *NoteContent) Validate() error {
+	c.Note = strings.TrimSpace(c.Note)
+
 	if c.Note == "" {
 		return errors.New("note must not be empty")
 	}
@@ -143,9 +146,10 @@ func ReadEvents(ctx context.Context, id int64, el EventLocation) ([]*Event, erro
 	if err != nil {
 		return nil, &Error{Description: fmt.Sprintf("Could not query events for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}
 	}
+	defer rows.Close()
 
 	for rows.Next() {
-		e := &Event{}
+		e := new(Event)
 		var content []byte
 
 		if err := rows.Scan(&(e.ID), &(e.UserID), &(e.Date), &(e.Type), &content); err != nil {

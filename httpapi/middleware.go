@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"mime"
 	"net/http"
 
 	"github.com/korylprince/tcea-inventory-server/api"
@@ -15,7 +16,7 @@ func authMiddleware(next http.Handler, s SessionStore) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Header.Get("X-Session-Key")
 		if key == "" {
-			handleError(w, r, http.StatusForbidden, errors.New("X-Session-Key header empty"))
+			handleError(w, r, http.StatusUnauthorized, errors.New("X-Session-Key header empty"))
 			return
 		}
 
@@ -25,7 +26,7 @@ func authMiddleware(next http.Handler, s SessionStore) http.Handler {
 			return
 		}
 		if sess == nil {
-			handleError(w, r, http.StatusForbidden, errors.New("Could not find session"))
+			handleError(w, r, http.StatusUnauthorized, errors.New("Could not find session"))
 			return
 		}
 
@@ -41,9 +42,16 @@ func authMiddleware(next http.Handler, s SessionStore) http.Handler {
 
 func jsonMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" && r.Header.Get("Content-Type") != "application/json" {
-			handleError(w, r, http.StatusBadRequest, errors.New("Content-Type not application/json"))
-			return
+		if r.Method != "GET" {
+			mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+			if err != nil {
+				handleError(w, r, http.StatusBadRequest, errors.New("Could not parse Content-Type"))
+				return
+			}
+			if mediaType != "application/json" {
+				handleError(w, r, http.StatusBadRequest, errors.New("Content-Type not application/json"))
+				return
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		next.ServeHTTP(w, r)
@@ -64,6 +72,5 @@ func txMiddleware(next http.Handler, db *sql.DB) http.Handler {
 		if err != sql.ErrTxDone {
 			log.Println("Transaction rolled back")
 		}
-
 	})
 }

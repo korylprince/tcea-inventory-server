@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"strings"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 //DeviceEventLocation is the EventLocation for the Device type
@@ -19,7 +21,7 @@ type Device struct {
 	ID           int64    `json:"id"`
 	SerialNumber string   `json:"serial_number"`
 	ModelID      int64    `json:"model_id"`
-	Status       string   `json:"status"`
+	Status       Status   `json:"status"`
 	Location     string   `json:"location"`
 	Events       []*Event `json:"events"`
 }
@@ -29,14 +31,30 @@ func (d *Device) Model(ctx context.Context) (*Model, error) {
 	return ReadModel(ctx, d.ModelID)
 }
 
-//Validate validates the given Device
+//Validate cleans and validates the given Device
 func (d *Device) Validate(ctx context.Context) error {
+	d.SerialNumber = strings.TrimSpace(d.SerialNumber)
+	d.Status = Status(strings.TrimSpace(string(d.Status)))
+	d.Location = strings.TrimSpace(d.Location)
+
 	if err := ValidateString("serial_number", d.SerialNumber, 255); err != nil {
 		return err
 	}
-	if !(d.Status == "Checked Out" || d.Status == "Storage" || d.Status == "Damaged" || d.Status == "Missing") {
+
+	statuses, err := ReadStatuses(ctx)
+	if err != nil {
+		return err
+	}
+	ok := false
+	for _, status := range statuses {
+		if d.Status == status {
+			ok = true
+		}
+	}
+	if !ok {
 		return fmt.Errorf("status (%s) must be a valid status", d.Status)
 	}
+
 	if err := ValidateString("location", d.Location, 255); err != nil {
 		return err
 	}
@@ -54,6 +72,9 @@ func CreateDevice(ctx context.Context, device *Device) (id int64, err error) {
 	tx := ctx.Value(TransactionKey).(*sql.Tx)
 
 	if err = device.Validate(ctx); err != nil {
+		if _, ok := err.(*Error); ok {
+			return 0, err
+		}
 		return 0, &Error{Description: "Could not validate Device", Type: ErrorTypeUser, Err: err}
 	}
 
@@ -64,7 +85,13 @@ func CreateDevice(ctx context.Context, device *Device) (id int64, err error) {
 		device.Location,
 	)
 	if err != nil {
-		log.Printf("%#v\n", err)
+		if e, ok := err.(*mysql.MySQLError); ok && e.Number == 1062 {
+			dup, newErr := ReadDeviceBySerialNumber(ctx, device.SerialNumber)
+			if newErr != nil {
+				return 0, newErr
+			}
+			return 0, &Error{Description: "Could not insert Device", Type: ErrorTypeDuplicate, Err: err, DuplicateID: dup.ID}
+		}
 		return 0, &Error{Description: "Could not insert Device", Type: ErrorTypeServer, Err: err}
 	}
 
@@ -107,6 +134,32 @@ func ReadDevice(ctx context.Context, id int64) (*Device, error) {
 	return device, nil
 }
 
+//ReadDeviceBySerialNumber returns the Device with the given Serial Number, or an error if one occurred
+func ReadDeviceBySerialNumber(ctx context.Context, serialNumber string) (*Device, error) {
+	tx := ctx.Value(TransactionKey).(*sql.Tx)
+
+	device := &Device{SerialNumber: serialNumber}
+
+	row := tx.QueryRow("SELECT id, model_id, status, location FROM device WHERE serial_number=?", serialNumber)
+	err := row.Scan(&(device.ID), &(device.ModelID), &(device.Status), &(device.Location))
+
+	switch {
+	case err == sql.ErrNoRows:
+		return nil, nil
+	case err != nil:
+		return nil, &Error{Description: fmt.Sprintf("Could not query DeviceBySerialNumber(%s)", serialNumber), Type: ErrorTypeServer, Err: err}
+	}
+
+	events, err := ReadEvents(ctx, device.ID, DeviceEventLocation)
+	if err != nil {
+		return nil, err
+	}
+
+	device.Events = events
+
+	return device, nil
+}
+
 //UpdateDevice updates the fields for the given Device (using the ID field, Events are ignored), or returns an error if one occurred
 func UpdateDevice(ctx context.Context, device *Device) error {
 	tx := ctx.Value(TransactionKey).(*sql.Tx)
@@ -128,6 +181,13 @@ func UpdateDevice(ctx context.Context, device *Device) error {
 		device.ID,
 	)
 	if err != nil {
+		if e, ok := err.(*mysql.MySQLError); ok && e.Number == 1062 {
+			dup, newErr := ReadDeviceBySerialNumber(ctx, device.SerialNumber)
+			if newErr != nil {
+				return newErr
+			}
+			return &Error{Description: fmt.Sprintf("Could not update Device(%d)", device.ID), Type: ErrorTypeDuplicate, Err: err, DuplicateID: dup.ID}
+		}
 		return &Error{Description: fmt.Sprintf("Could not update Device(%d)", device.ID), Type: ErrorTypeServer, Err: err}
 	}
 
@@ -139,7 +199,7 @@ func UpdateDevice(ctx context.Context, device *Device) error {
 	}
 
 	if oldDevice.ModelID != device.ModelID {
-		_, err := CreateModifiedEvent(ctx, device.ID, DeviceEventLocation, "model", oldDevice.ModelID, device.ModelID)
+		_, err := CreateModifiedEvent(ctx, device.ID, DeviceEventLocation, "model_id", oldDevice.ModelID, device.ModelID)
 		if err != nil {
 			return &Error{Description: fmt.Sprintf("Could not created Modified Event Device(%d).ModelID", device.ID), Type: ErrorTypeServer, Err: err}
 		}

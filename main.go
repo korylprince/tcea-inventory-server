@@ -19,7 +19,7 @@ func main() {
 		log.Fatalln("Could not open database:", err)
 	}
 
-	s := httpapi.NewMemorySessionStore(time.Hour * time.Duration(config.SessionDuration))
+	s := httpapi.NewMemorySessionStore(time.Minute * time.Duration(config.SessionExpiration))
 
 	ctx := context.Background()
 

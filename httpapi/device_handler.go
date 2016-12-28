@@ -139,7 +139,7 @@ func handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-//POST /devices/:id/notes
+//POST /devices/:id/notes/
 func handleCreateDeviceNoteEvent(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
