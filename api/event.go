@@ -142,7 +142,7 @@ func ReadEvents(ctx context.Context, id int64, el EventLocation) ([]*Event, erro
 
 	var events []*Event
 
-	rows, err := tx.Query(fmt.Sprintf("SELECT id, user_id, date, type, content FROM %s WHERE %s=?;", el.Table, el.IDField), id)
+	rows, err := tx.Query(fmt.Sprintf("SELECT id, user_id, date, type, content FROM %s WHERE %s=? ORDER BY date;", el.Table, el.IDField), id)
 	if err != nil {
 		return nil, &Error{Description: fmt.Sprintf("Could not query events for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}
 	}
