@@ -35,7 +35,7 @@ func handleCreateModel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	model, err := api.ReadModel(r.Context(), id)
+	model, err := api.ReadModel(r.Context(), id, true)
 	if !checkAPIError(w, r, err) {
 		return
 	}
@@ -66,7 +66,12 @@ func handleReadModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	model, err := api.ReadModel(r.Context(), id)
+	includeEvents := false
+	if v := r.URL.Query().Get("events"); v == "true" {
+		includeEvents = true
+	}
+
+	model, err := api.ReadModel(r.Context(), id, includeEvents)
 	if !checkAPIError(w, r, err) {
 		return
 	}
@@ -116,7 +121,7 @@ func handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	model, err = api.ReadModel(r.Context(), model.ID)
+	model, err = api.ReadModel(r.Context(), model.ID, true)
 	if !checkAPIError(w, r, err) {
 		return
 	}
@@ -161,7 +166,7 @@ func handleCreateModelNoteEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	model, err := api.ReadModel(r.Context(), id)
+	model, err := api.ReadModel(r.Context(), id, true)
 	if !checkAPIError(w, r, err) {
 		return
 	}

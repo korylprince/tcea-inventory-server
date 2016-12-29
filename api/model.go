@@ -52,7 +52,7 @@ func CreateModel(ctx context.Context, model *Model) (id int64, err error) {
 	)
 	if err != nil {
 		if e, ok := err.(*mysql.MySQLError); ok && e.Number == 1062 {
-			dup, newErr := ReadModelByManufacturerAndModel(ctx, model.Manufacturer, model.Model)
+			dup, newErr := ReadModelByManufacturerAndModel(ctx, model.Manufacturer, model.Model, false)
 			if newErr != nil {
 				return 0, newErr
 			}
@@ -73,8 +73,9 @@ func CreateModel(ctx context.Context, model *Model) (id int64, err error) {
 	return id, nil
 }
 
-//ReadModel returns the Model with the given id, or an error if one occurred
-func ReadModel(ctx context.Context, id int64) (*Model, error) {
+//ReadModel returns the Model with the given id, or an error if one occurred.
+//If includeEvents is true the Events field will be populated
+func ReadModel(ctx context.Context, id int64, includeEvents bool) (*Model, error) {
 	tx := ctx.Value(TransactionKey).(*sql.Tx)
 
 	model := &Model{ID: id}
@@ -89,18 +90,22 @@ func ReadModel(ctx context.Context, id int64) (*Model, error) {
 		return nil, &Error{Description: fmt.Sprintf("Could not query Model(%d)", id), Type: ErrorTypeServer, Err: err}
 	}
 
-	events, err := ReadEvents(ctx, id, ModelEventLocation)
-	if err != nil {
-		return nil, err
-	}
+	if includeEvents {
 
-	model.Events = events
+		events, err := ReadEvents(ctx, id, ModelEventLocation)
+		if err != nil {
+			return nil, err
+		}
+
+		model.Events = events
+	}
 
 	return model, nil
 }
 
-//ReadModelByManufacturerAndModel returns the Model with the given Manufacturer and Model, or an error if one occurred
-func ReadModelByManufacturerAndModel(ctx context.Context, manufacturer, model string) (*Model, error) {
+//ReadModelByManufacturerAndModel returns the Model with the given Manufacturer and Model, or an error if one occurred.
+//If includeEvents is true the Events field will be populated
+func ReadModelByManufacturerAndModel(ctx context.Context, manufacturer, model string, includeEvents bool) (*Model, error) {
 	tx := ctx.Value(TransactionKey).(*sql.Tx)
 
 	newModel := &Model{Manufacturer: manufacturer, Model: model}
@@ -115,12 +120,15 @@ func ReadModelByManufacturerAndModel(ctx context.Context, manufacturer, model st
 		return nil, &Error{Description: fmt.Sprintf("Could not query ModelByManufacturerAndModel(%s %s)", manufacturer, model), Type: ErrorTypeServer, Err: err}
 	}
 
-	events, err := ReadEvents(ctx, newModel.ID, ModelEventLocation)
-	if err != nil {
-		return nil, err
-	}
+	if includeEvents {
 
-	newModel.Events = events
+		events, err := ReadEvents(ctx, newModel.ID, ModelEventLocation)
+		if err != nil {
+			return nil, err
+		}
+
+		newModel.Events = events
+	}
 
 	return newModel, nil
 }
@@ -133,7 +141,7 @@ func UpdateModel(ctx context.Context, model *Model) error {
 		return &Error{Description: "Could not validate Model", Type: ErrorTypeUser, Err: err}
 	}
 
-	oldModel, err := ReadModel(ctx, model.ID)
+	oldModel, err := ReadModel(ctx, model.ID, false)
 	if err != nil {
 		return &Error{Description: fmt.Sprintf("Could not read old Model(%d)", model.ID), Type: ErrorTypeServer, Err: err}
 	}
@@ -145,7 +153,7 @@ func UpdateModel(ctx context.Context, model *Model) error {
 	)
 	if err != nil {
 		if e, ok := err.(*mysql.MySQLError); ok && e.Number == 1062 {
-			dup, newErr := ReadModelByManufacturerAndModel(ctx, model.Manufacturer, model.Model)
+			dup, newErr := ReadModelByManufacturerAndModel(ctx, model.Manufacturer, model.Model, false)
 			if newErr != nil {
 				return newErr
 			}
@@ -171,7 +179,8 @@ func UpdateModel(ctx context.Context, model *Model) error {
 	return nil
 }
 
-//ReadModels returns all Models (without Events), or an error if one occurred
+//ReadModels returns all Models or an error if one occurred.
+//If includeEvents is true the Events field will be populated
 func ReadModels(ctx context.Context, includeEvents bool) ([]*Model, error) {
 	tx := ctx.Value(TransactionKey).(*sql.Tx)
 

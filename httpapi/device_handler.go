@@ -35,7 +35,7 @@ func handleCreateDevice(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	device, err := api.ReadDevice(r.Context(), id)
+	device, err := api.ReadDevice(r.Context(), id, true)
 	if !checkAPIError(w, r, err) {
 		return
 	}
@@ -66,7 +66,12 @@ func handleReadDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	device, err := api.ReadDevice(r.Context(), id)
+	includeEvents := false
+	if v := r.URL.Query().Get("events"); v == "true" {
+		includeEvents = true
+	}
+
+	device, err := api.ReadDevice(r.Context(), id, includeEvents)
 	if !checkAPIError(w, r, err) {
 		return
 	}
@@ -116,7 +121,7 @@ func handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	device, err = api.ReadDevice(r.Context(), device.ID)
+	device, err = api.ReadDevice(r.Context(), device.ID, true)
 	if !checkAPIError(w, r, err) {
 		return
 	}
@@ -161,7 +166,7 @@ func handleCreateDeviceNoteEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	device, err := api.ReadDevice(r.Context(), id)
+	device, err := api.ReadDevice(r.Context(), id, true)
 	if !checkAPIError(w, r, err) {
 		return
 	}

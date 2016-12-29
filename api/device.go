@@ -26,9 +26,10 @@ type Device struct {
 	Events       []*Event `json:"events"`
 }
 
-//Model resolves the ModelID field to a Model
-func (d *Device) Model(ctx context.Context) (*Model, error) {
-	return ReadModel(ctx, d.ModelID)
+//Model resolves the ModelID field to a Model.
+//If includeEvents is true the Events field will be populated
+func (d *Device) Model(ctx context.Context, includeEvents bool) (*Model, error) {
+	return ReadModel(ctx, d.ModelID, includeEvents)
 }
 
 //Validate cleans and validates the given Device
@@ -59,7 +60,7 @@ func (d *Device) Validate(ctx context.Context) error {
 		return err
 	}
 
-	if model, err := d.Model(ctx); model == nil || err != nil {
+	if model, err := d.Model(ctx, false); model == nil || err != nil {
 		return fmt.Errorf("model (%d) must be a valid model", d.ModelID)
 	}
 
@@ -86,7 +87,7 @@ func CreateDevice(ctx context.Context, device *Device) (id int64, err error) {
 	)
 	if err != nil {
 		if e, ok := err.(*mysql.MySQLError); ok && e.Number == 1062 {
-			dup, newErr := ReadDeviceBySerialNumber(ctx, device.SerialNumber)
+			dup, newErr := ReadDeviceBySerialNumber(ctx, device.SerialNumber, false)
 			if newErr != nil {
 				return 0, newErr
 			}
@@ -108,8 +109,9 @@ func CreateDevice(ctx context.Context, device *Device) (id int64, err error) {
 
 }
 
-//ReadDevice returns the Device with the given id, or an error if one occurred
-func ReadDevice(ctx context.Context, id int64) (*Device, error) {
+//ReadDevice returns the Device with the given id, or an error if one occurred.
+//If includeEvents is true the Events field will be populated
+func ReadDevice(ctx context.Context, id int64, includeEvents bool) (*Device, error) {
 	tx := ctx.Value(TransactionKey).(*sql.Tx)
 
 	device := &Device{ID: id}
@@ -124,18 +126,21 @@ func ReadDevice(ctx context.Context, id int64) (*Device, error) {
 		return nil, &Error{Description: fmt.Sprintf("Could not query Device(%d)", id), Type: ErrorTypeServer, Err: err}
 	}
 
-	events, err := ReadEvents(ctx, id, DeviceEventLocation)
-	if err != nil {
-		return nil, err
-	}
+	if includeEvents {
+		events, err := ReadEvents(ctx, id, DeviceEventLocation)
+		if err != nil {
+			return nil, err
+		}
 
-	device.Events = events
+		device.Events = events
+	}
 
 	return device, nil
 }
 
-//ReadDeviceBySerialNumber returns the Device with the given Serial Number, or an error if one occurred
-func ReadDeviceBySerialNumber(ctx context.Context, serialNumber string) (*Device, error) {
+//ReadDeviceBySerialNumber returns the Device with the given Serial Number, or an error if one occurred.
+//If includeEvents is true the Events field will be populated
+func ReadDeviceBySerialNumber(ctx context.Context, serialNumber string, includeEvents bool) (*Device, error) {
 	tx := ctx.Value(TransactionKey).(*sql.Tx)
 
 	device := &Device{SerialNumber: serialNumber}
@@ -150,12 +155,14 @@ func ReadDeviceBySerialNumber(ctx context.Context, serialNumber string) (*Device
 		return nil, &Error{Description: fmt.Sprintf("Could not query DeviceBySerialNumber(%s)", serialNumber), Type: ErrorTypeServer, Err: err}
 	}
 
-	events, err := ReadEvents(ctx, device.ID, DeviceEventLocation)
-	if err != nil {
-		return nil, err
-	}
+	if includeEvents {
+		events, err := ReadEvents(ctx, device.ID, DeviceEventLocation)
+		if err != nil {
+			return nil, err
+		}
 
-	device.Events = events
+		device.Events = events
+	}
 
 	return device, nil
 }
@@ -168,7 +175,7 @@ func UpdateDevice(ctx context.Context, device *Device) error {
 		return &Error{Description: "Could not validate Device", Type: ErrorTypeUser, Err: err}
 	}
 
-	oldDevice, err := ReadDevice(ctx, device.ID)
+	oldDevice, err := ReadDevice(ctx, device.ID, false)
 	if err != nil {
 		return &Error{Description: fmt.Sprintf("Could not read old Device(%d)", device.ID), Type: ErrorTypeServer, Err: err}
 	}
@@ -182,7 +189,7 @@ func UpdateDevice(ctx context.Context, device *Device) error {
 	)
 	if err != nil {
 		if e, ok := err.(*mysql.MySQLError); ok && e.Number == 1062 {
-			dup, newErr := ReadDeviceBySerialNumber(ctx, device.SerialNumber)
+			dup, newErr := ReadDeviceBySerialNumber(ctx, device.SerialNumber, false)
 			if newErr != nil {
 				return newErr
 			}
