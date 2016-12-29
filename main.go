@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"log"
 	"net/http"
@@ -21,9 +20,7 @@ func main() {
 
 	s := httpapi.NewMemorySessionStore(time.Minute * time.Duration(config.SessionExpiration))
 
-	ctx := context.Background()
-
-	r := httpapi.NewRouter(ctx, s, db)
+	r := httpapi.NewRouter(s, db)
 
 	chain := handlers.CombinedLoggingHandler(os.Stdout,
 		handlers.CompressHandler(

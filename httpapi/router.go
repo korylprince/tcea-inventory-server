@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"database/sql"
 	"net/http"
 
@@ -9,7 +8,7 @@ import (
 )
 
 //NewRouter returns an HTTP router for the HTTP API
-func NewRouter(ctx context.Context, s SessionStore, db *sql.DB) http.Handler {
+func NewRouter(s SessionStore, db *sql.DB) http.Handler {
 	r := mux.NewRouter()
 
 	r.Path("/statuses/").Methods("GET").HandlerFunc(handleReadStatuses)
