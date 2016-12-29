@@ -17,7 +17,7 @@ func NewRouter(ctx context.Context, s SessionStore, db *sql.DB) http.Handler {
 	r.Path("/models/").Methods("POST").HandlerFunc(handleCreateModel)
 	r.Path("/models/{id:[0-9]+}").Methods("GET").HandlerFunc(handleReadModel)
 	r.Path("/models/{id:[0-9]+}").Methods("POST").HandlerFunc(handleUpdateModel)
-	r.Path("/models/{id:[0-9]+}/notes").Methods("POST").HandlerFunc(handleCreateModelNoteEvent)
+	r.Path("/models/{id:[0-9]+}/notes/").Methods("POST").HandlerFunc(handleCreateModelNoteEvent)
 	r.Path("/models/").Methods("GET").HandlerFunc(handleReadModels)
 
 	r.Path("/devices/").Methods("POST").HandlerFunc(handleCreateDevice)
