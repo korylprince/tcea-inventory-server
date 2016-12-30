@@ -1,31 +1,17 @@
 package httpapi
 
 import (
-	"database/sql"
-	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/korylprince/tcea-inventory-server/api"
 )
 
 //GET /statuses/
-func handleReadStatuses(w http.ResponseWriter, r *http.Request) {
+func handleReadStatuses(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	statuses, err := api.ReadStatuses(r.Context())
-	if !checkAPIError(w, r, err) {
-		return
+	if err := checkAPIError(err); err != nil {
+		return err
 	}
 
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
-	}
-
-	e := json.NewEncoder(w)
-	err = e.Encode(&ReadStatusesResponse{Statuses: statuses})
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: &ReadStatusesResponse{Statuses: statuses}}
 }

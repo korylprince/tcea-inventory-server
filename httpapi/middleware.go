@@ -3,74 +3,134 @@ package httpapi
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"html/template"
+	"io"
 	"mime"
 	"net/http"
+	"time"
 
 	"github.com/korylprince/tcea-inventory-server/api"
 )
 
-func authMiddleware(next http.Handler, s SessionStore) http.Handler {
+type handlerResponse struct {
+	Code int
+	Body interface{}
+	User *api.User
+	Err  error
+}
+
+type returnHandler func(http.ResponseWriter, *http.Request) *handlerResponse
+
+const logTemplate = "Date: {{.Date}}{{if .User}}, User: {{.User.ID}}:{{.User.Email}}{{- end}}, Status: {{.Status}}({{.Code}}), Path: {{.Path}}{{if .Query}}?{{.Query}}{{- end}}{{if .Err}}, Error: {{.Err}}{{- end}}\n"
+
+type logData struct {
+	Date   string
+	User   *api.User
+	Status string
+	Code   int
+	Path   string
+	Query  string
+	Err    error
+}
+
+func logMiddleware(next returnHandler, writer io.Writer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := next(w, r)
+
+		err := template.Must(template.New("log").Parse(logTemplate)).Execute(writer, &logData{
+			Date:   time.Now().Format("2006-01-02:15:04:05Z-0700"),
+			User:   resp.User,
+			Status: http.StatusText(resp.Code),
+			Code:   resp.Code,
+			Path:   r.URL.Path,
+			Query:  r.URL.RawQuery,
+			Err:    resp.Err,
+		})
+
+		if err != nil {
+			panic(err)
+		}
+	})
+}
+
+func jsonMiddleware(next returnHandler) returnHandler {
+	return func(w http.ResponseWriter, r *http.Request) *handlerResponse {
+		var resp *handlerResponse
+
+		if r.Method != "GET" {
+			mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+			if err != nil {
+				resp = handleError(http.StatusBadRequest, errors.New("Could not parse Content-Type"))
+				goto serve
+			}
+			if mediaType != "application/json" {
+				resp = handleError(http.StatusBadRequest, errors.New("Content-Type not application/json"))
+				goto serve
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		resp = next(w, r)
+
+	serve:
+		w.WriteHeader(resp.Code)
+		e := json.NewEncoder(w)
+		err := e.Encode(resp.Body)
+		if err != nil {
+			return handleError(http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
+		}
+		return resp
+	}
+}
+
+func authMiddleware(next returnHandler, s SessionStore) returnHandler {
+	return func(w http.ResponseWriter, r *http.Request) *handlerResponse {
 		key := r.Header.Get("X-Session-Key")
 		if key == "" {
-			handleError(w, r, http.StatusUnauthorized, errors.New("X-Session-Key header empty"))
-			return
+			return handleError(http.StatusUnauthorized, errors.New("X-Session-Key header empty"))
 		}
 
 		sess, err := s.Check(key)
 		if err != nil {
-			handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not check session key: %v", err))
-			return
+			return handleError(http.StatusInternalServerError, fmt.Errorf("Could not check session key: %v", err))
 		}
 		if sess == nil {
-			handleError(w, r, http.StatusUnauthorized, errors.New("Could not find session"))
-			return
+			return handleError(http.StatusUnauthorized, errors.New("Could not find session"))
 		}
 
 		user, err := api.ReadUser(r.Context(), sess.UserID)
-		if !checkAPIError(w, r, err) {
-			return
+		if resp := checkAPIError(err); resp != nil {
+			return resp
 		}
 
 		ctx := context.WithValue(r.Context(), api.UserKey, user)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+		resp := next(w, r.WithContext(ctx))
+		resp.User = user
+
+		return resp
+	}
 }
 
-func jsonMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" {
-			mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-			if err != nil {
-				handleError(w, r, http.StatusBadRequest, errors.New("Could not parse Content-Type"))
-				return
-			}
-			if mediaType != "application/json" {
-				handleError(w, r, http.StatusBadRequest, errors.New("Content-Type not application/json"))
-				return
-			}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		next.ServeHTTP(w, r)
-	})
-}
-
-func txMiddleware(next http.Handler, db *sql.DB) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func txMiddleware(next returnHandler, db *sql.DB) returnHandler {
+	return func(w http.ResponseWriter, r *http.Request) *handlerResponse {
 		tx, err := db.Begin()
 		if err != nil {
-			handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not begin transaction: %v", err))
-			return
+			return handleError(http.StatusInternalServerError, fmt.Errorf("Could not begin transaction: %v", err))
 		}
-		ctx := context.WithValue(r.Context(), api.TransactionKey, tx)
-		next.ServeHTTP(w, r.WithContext(ctx))
 
-		err = tx.Rollback()
-		if err != sql.ErrTxDone {
-			log.Println("Transaction rolled back")
+		ctx := context.WithValue(r.Context(), api.TransactionKey, tx)
+		resp := next(w, r.WithContext(ctx))
+
+		if err = tx.Commit(); err != nil {
+			if rErr := tx.Rollback(); rErr != nil && rErr != sql.ErrTxDone {
+				return handleError(http.StatusInternalServerError, fmt.Errorf("Could not rollback transaction: %v", rErr))
+			}
+			return handleError(http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
 		}
-	})
+
+		return resp
+	}
 }

@@ -2,41 +2,43 @@ package httpapi
 
 import (
 	"database/sql"
+	"io"
 	"net/http"
 
 	"github.com/gorilla/mux"
 )
 
 //NewRouter returns an HTTP router for the HTTP API
-func NewRouter(s SessionStore, db *sql.DB) http.Handler {
+func NewRouter(w io.Writer, s SessionStore, db *sql.DB) http.Handler {
+
+	//construct middleware
+	var m = func(h returnHandler) http.Handler {
+		return logMiddleware(jsonMiddleware(txMiddleware(authMiddleware(h, s), db)), w)
+	}
+
 	r := mux.NewRouter()
 
-	r.Path("/statuses/").Methods("GET").HandlerFunc(handleReadStatuses)
+	r.Path("/statuses/").Methods("GET").Handler(m(handleReadStatuses))
 
-	r.Path("/models/").Methods("POST").HandlerFunc(handleCreateModel)
-	r.Path("/models/{id:[0-9]+}").Methods("GET").HandlerFunc(handleReadModel)
-	r.Path("/models/{id:[0-9]+}").Methods("POST").HandlerFunc(handleUpdateModel)
-	r.Path("/models/{id:[0-9]+}/notes/").Methods("POST").HandlerFunc(handleCreateModelNoteEvent)
-	r.Path("/models/").Methods("GET").HandlerFunc(handleReadModels)
+	r.Path("/models/").Methods("POST").Handler(m(handleCreateModel))
+	r.Path("/models/{id:[0-9]+}").Methods("GET").Handler(m(handleReadModel))
+	r.Path("/models/{id:[0-9]+}").Methods("POST").Handler(m(handleUpdateModel))
+	r.Path("/models/{id:[0-9]+}/notes/").Methods("POST").Handler(m(handleCreateModelNoteEvent))
+	r.Path("/models/").Methods("GET").Handler(m(handleReadModels))
 
-	r.Path("/devices/").Methods("POST").HandlerFunc(handleCreateDevice)
-	r.Path("/devices/{id:[0-9]+}").Methods("GET").HandlerFunc(handleReadDevice)
-	r.Path("/devices/{id:[0-9]+}").Methods("POST").HandlerFunc(handleUpdateDevice)
-	r.Path("/devices/{id:[0-9]+}/notes/").Methods("POST").HandlerFunc(handleCreateDeviceNoteEvent)
+	r.Path("/devices/").Methods("POST").Handler(m(handleCreateDevice))
+	r.Path("/devices/{id:[0-9]+}").Methods("GET").Handler(m(handleReadDevice))
+	r.Path("/devices/{id:[0-9]+}").Methods("POST").Handler(m(handleUpdateDevice))
+	r.Path("/devices/{id:[0-9]+}/notes/").Methods("POST").Handler(m(handleCreateDeviceNoteEvent))
 
-	r.Path("/users/").Methods("POST").HandlerFunc(handleCreateUserWithCredentials)
-	r.Path("/users/{id:[0-9]+}").Methods("GET").HandlerFunc(handleReadUser)
-	r.Path("/users/{id:[0-9]+}").Methods("POST").HandlerFunc(handleUpdateUser)
-	r.Path("/users/{id:[0-9]+}/password").Methods("POST").HandlerFunc(handleChangeUserPassword)
-	r.NotFoundHandler = http.HandlerFunc(notFoundHandler)
+	r.Path("/users/").Methods("POST").Handler(m(handleCreateUserWithCredentials))
+	r.Path("/users/{id:[0-9]+}").Methods("GET").Handler(m(handleReadUser))
+	r.Path("/users/{id:[0-9]+}").Methods("POST").Handler(m(handleUpdateUser))
+	r.Path("/users/{id:[0-9]+}/password").Methods("POST").Handler(m(handleChangeUserPassword))
 
-	auth := mux.NewRouter()
-	auth.Path("/auth").Methods("POST").HandlerFunc(handleAuthenticate(s))
+	r.Path("/auth").Methods("POST").Handler(logMiddleware(jsonMiddleware(txMiddleware(handleAuthenticate(s), db)), w))
 
-	mux := http.NewServeMux()
+	r.NotFoundHandler = m(notFoundHandler)
 
-	mux.Handle("/auth", auth)
-	mux.Handle("/", authMiddleware(r, s))
-
-	return http.StripPrefix("/api/1.0", jsonMiddleware(txMiddleware(mux, db)))
+	return http.StripPrefix("/api/1.0", r)
 }

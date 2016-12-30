@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,93 +12,66 @@ import (
 )
 
 //POST /devices
-func handleCreateDevice(w http.ResponseWriter, r *http.Request) {
+func handleCreateDevice(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	var req *DeviceCreateRequest
 	d := json.NewDecoder(r.Body)
 
 	err := d.Decode(&req)
 	if err != nil || req == nil || req.Device == nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
 	}
 
 	id, err := api.CreateDevice(r.Context(), req.Device)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 
 	if req.Note != "" {
 		_, err = api.CreateNoteEvent(r.Context(), id, api.DeviceEventLocation, req.Note)
-		if !checkAPIError(w, r, err) {
-			return
+		if resp := checkAPIError(err); resp != nil {
+			return resp
 		}
 	}
 
 	device, err := api.ReadDevice(r.Context(), id, true)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 	if device == nil {
-		handleError(w, r, http.StatusInternalServerError, errors.New("Could not find device, but just created"))
-		return
+		return handleError(http.StatusInternalServerError, errors.New("Could not find device, but just created"))
 	}
 
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
-	}
-
-	e := json.NewEncoder(w)
-	err = e.Encode(device)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: device}
 }
 
 //GET /devices/:id
-func handleReadDevice(w http.ResponseWriter, r *http.Request) {
+func handleReadDevice(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
 	}
 
 	includeEvents := false
-	if v := r.URL.Query().Get("events"); v == "true" {
+	if v := r.URL.Query().Get("events"); v == eventsTrue {
 		includeEvents = true
 	}
 
 	device, err := api.ReadDevice(r.Context(), id, includeEvents)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 	if device == nil {
-		handleError(w, r, http.StatusNotFound, errors.New("Could not find device"))
-		return
+		return handleError(http.StatusNotFound, errors.New("Could not find device"))
 	}
 
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
-	}
-
-	e := json.NewEncoder(w)
-	err = e.Encode(device)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: device}
 }
 
 //POST /devices/:id
-func handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
+func handleUpdateDevice(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
 	}
 
 	var device *api.Device
@@ -107,49 +79,34 @@ func handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
 
 	err = d.Decode(&device)
 	if err != nil || device == nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
 	}
 
 	if device.ID != id {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("device id mismatch: URL: %d, Body: %d", id, device.ID))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("device id mismatch: URL: %d, Body: %d", id, device.ID))
 	}
 
 	err = api.UpdateDevice(r.Context(), device)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 
 	device, err = api.ReadDevice(r.Context(), device.ID, true)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 	if device == nil {
-		handleError(w, r, http.StatusNotFound, errors.New("Could not find device, but just updated"))
-		return
+		return handleError(http.StatusNotFound, errors.New("Could not find device, but just updated"))
 	}
 
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
-	}
-
-	e := json.NewEncoder(w)
-	err = e.Encode(device)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: device}
 }
 
 //POST /devices/:id/notes/
-func handleCreateDeviceNoteEvent(w http.ResponseWriter, r *http.Request) {
+func handleCreateDeviceNoteEvent(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
 	}
 
 	var note *NoteRequest
@@ -157,34 +114,21 @@ func handleCreateDeviceNoteEvent(w http.ResponseWriter, r *http.Request) {
 
 	err = d.Decode(&note)
 	if err != nil || note == nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
 	}
 
 	_, err = api.CreateNoteEvent(r.Context(), id, api.DeviceEventLocation, note.Note)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 
 	device, err := api.ReadDevice(r.Context(), id, true)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 	if device == nil {
-		handleError(w, r, http.StatusNotFound, errors.New("Could not find device, but just updated"))
-		return
+		return handleError(http.StatusNotFound, errors.New("Could not find device, but just updated"))
 	}
 
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
-	}
-
-	e := json.NewEncoder(w)
-	err = e.Encode(device)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: device}
 }

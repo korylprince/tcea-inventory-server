@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,82 +12,55 @@ import (
 )
 
 //POST /users
-func handleCreateUserWithCredentials(w http.ResponseWriter, r *http.Request) {
+func handleCreateUserWithCredentials(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	var req *UserCreateRequest
 	d := json.NewDecoder(r.Body)
 
 	err := d.Decode(&req)
 	if err != nil || req == nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode json: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode json: %v", err))
 	}
 
 	id, err := api.CreateUserWithCredentials(r.Context(), req.Email, req.Password, req.Name)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 
 	user, err := api.ReadUser(r.Context(), id)
-	if !checkAPIError(w, r, err) {
-		return
-	}
-
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 
 	if user == nil {
-		handleError(w, r, http.StatusInternalServerError, errors.New("Could not find user, but just created"))
-		return
+		return handleError(http.StatusInternalServerError, errors.New("Could not find user, but just created"))
 	}
 
-	e := json.NewEncoder(w)
-	err = e.Encode(user)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: user}
 }
 
 //GET /users/:id
-func handleReadUser(w http.ResponseWriter, r *http.Request) {
+func handleReadUser(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
 	}
 
 	user, err := api.ReadUser(r.Context(), id)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 	if user == nil {
-		handleError(w, r, http.StatusNotFound, errors.New("Could not find user"))
-		return
+		return handleError(http.StatusNotFound, errors.New("Could not find user"))
 	}
 
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
-	}
-
-	e := json.NewEncoder(w)
-	err = e.Encode(user)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: user}
 }
 
 //POST /users/:id
-func handleUpdateUser(w http.ResponseWriter, r *http.Request) {
+func handleUpdateUser(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
 	}
 
 	var user *api.User
@@ -96,59 +68,43 @@ func handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	err = d.Decode(&user)
 	if err != nil || user == nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode json: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode json: %v", err))
 	}
 
 	authUser := r.Context().Value(api.UserKey).(*api.User)
 
 	if authUser.ID != id {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("user id mismatch: URL: %d, Authenticated: %d", id, user.ID))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("user id mismatch: URL: %d, Authenticated: %d", id, user.ID))
 	}
 
 	if authUser.ID != user.ID {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("user id mismatch: Body: %d, Authenticated: %d", user.ID, user.ID))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("user id mismatch: Body: %d, Authenticated: %d", user.ID, user.ID))
 	}
 
 	//use authenticated user hash since it is not sent in request
 	user.Hash = authUser.Hash
 
 	err = api.UpdateUser(r.Context(), user)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 
 	user, err = api.ReadUser(r.Context(), user.ID)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 	if user == nil {
-		handleError(w, r, http.StatusNotFound, errors.New("Could not find user, but just updated"))
-		return
+		return handleError(http.StatusNotFound, errors.New("Could not find user, but just updated"))
 	}
 
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
-	}
-
-	e := json.NewEncoder(w)
-	err = e.Encode(user)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: user}
 }
 
 //POST /users/:id/password
-func handleChangeUserPassword(w http.ResponseWriter, r *http.Request) {
+func handleChangeUserPassword(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
 	}
 
 	var req *ChangeUserPasswordRequest
@@ -156,94 +112,64 @@ func handleChangeUserPassword(w http.ResponseWriter, r *http.Request) {
 
 	err = d.Decode(&req)
 	if err != nil || req == nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode json: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode json: %v", err))
 	}
 
 	user := r.Context().Value(api.UserKey).(*api.User)
 
 	if user.ID != id {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("user id mismatch: URL: %d, Authenticated: %d", id, user.ID))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("user id mismatch: URL: %d, Authenticated: %d", id, user.ID))
 	}
 
 	err = user.ChangePassword(r.Context(), req.OldPassword, req.NewPassword)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 
 	user, err = api.ReadUser(r.Context(), user.ID)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 	if user == nil {
-		handleError(w, r, http.StatusNotFound, errors.New("Could not find user, but just updated"))
-		return
+		return handleError(http.StatusNotFound, errors.New("Could not find user, but just updated"))
 	}
 
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
-	}
-
-	e := json.NewEncoder(w)
-	err = e.Encode(user)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: user}
 }
 
 //POST /auth
-func handleAuthenticate(s SessionStore) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func handleAuthenticate(s SessionStore) returnHandler {
+	return func(w http.ResponseWriter, r *http.Request) *handlerResponse {
 		var req *AuthenticateRequest
 		d := json.NewDecoder(r.Body)
 
 		err := d.Decode(&req)
 		if err != nil || req == nil {
-			handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode json: %v", err))
-			return
+			return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode json: %v", err))
 		}
 
 		if req.Email == "" || req.Password == "" {
-			handleError(w, r, http.StatusBadRequest, errors.New("email or password empty"))
-			return
+			return handleError(http.StatusBadRequest, errors.New("email or password empty"))
 		}
 
 		user, err := api.ReadUserByEmail(r.Context(), req.Email)
-		if !checkAPIError(w, r, err) {
-			return
+		if resp := checkAPIError(err); resp != nil {
+			return resp
 		}
 		if user == nil {
-			handleError(w, r, http.StatusUnauthorized, errors.New("Could not find user"))
-			return
+			return handleError(http.StatusUnauthorized, errors.New("Could not find user"))
 		}
 
 		err = user.Authenticate(r.Context(), req.Password)
 		if err != nil {
-			handleError(w, r, http.StatusUnauthorized, fmt.Errorf("Could not authenticate user: %v", err))
-			return
-		}
-
-		tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-		err = tx.Commit()
-		if err != nil {
-			handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-			return
+			return handleError(http.StatusUnauthorized, fmt.Errorf("Could not authenticate user: %v", err))
 		}
 
 		key, err := s.Create(user.ID)
 		if err != nil {
-			handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not create session: %v", err))
-			return
+			return handleError(http.StatusInternalServerError, fmt.Errorf("Could not create session: %v", err))
 		}
 
-		e := json.NewEncoder(w)
-		err = e.Encode(&AuthenticateResponse{SessionKey: key, User: user})
-		if err != nil {
-			handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-		}
+		return &handlerResponse{Code: http.StatusOK, Body: &AuthenticateResponse{SessionKey: key, User: user}}
 	}
 }

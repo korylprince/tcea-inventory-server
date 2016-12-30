@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,93 +12,66 @@ import (
 )
 
 //POST /models
-func handleCreateModel(w http.ResponseWriter, r *http.Request) {
+func handleCreateModel(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	var req *ModelCreateRequest
 	d := json.NewDecoder(r.Body)
 
 	err := d.Decode(&req)
 	if err != nil || req == nil || req.Model == nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
 	}
 
 	id, err := api.CreateModel(r.Context(), req.Model)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 
 	if req.Note != "" {
 		_, err = api.CreateNoteEvent(r.Context(), id, api.ModelEventLocation, req.Note)
-		if !checkAPIError(w, r, err) {
-			return
+		if resp := checkAPIError(err); resp != nil {
+			return resp
 		}
 	}
 
 	model, err := api.ReadModel(r.Context(), id, true)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 	if model == nil {
-		handleError(w, r, http.StatusInternalServerError, errors.New("Could not find model, but just created"))
-		return
+		return handleError(http.StatusInternalServerError, errors.New("Could not find model, but just created"))
 	}
 
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
-	}
-
-	e := json.NewEncoder(w)
-	err = e.Encode(model)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: model}
 }
 
 //GET /models/:id
-func handleReadModel(w http.ResponseWriter, r *http.Request) {
+func handleReadModel(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
 	}
 
 	includeEvents := false
-	if v := r.URL.Query().Get("events"); v == "true" {
+	if v := r.URL.Query().Get("events"); v == eventsTrue {
 		includeEvents = true
 	}
 
 	model, err := api.ReadModel(r.Context(), id, includeEvents)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 	if model == nil {
-		handleError(w, r, http.StatusNotFound, errors.New("Could not find model"))
-		return
+		return handleError(http.StatusNotFound, errors.New("Could not find model"))
 	}
 
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
-	}
-
-	e := json.NewEncoder(w)
-	err = e.Encode(model)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: model}
 }
 
 //POST /models/:id
-func handleUpdateModel(w http.ResponseWriter, r *http.Request) {
+func handleUpdateModel(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
 	}
 
 	var model *api.Model
@@ -107,49 +79,34 @@ func handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 
 	err = d.Decode(&model)
 	if err != nil || model == nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
 	}
 
 	if model.ID != id {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("model id mismatch: URL: %d, Body: %d", id, model.ID))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("model id mismatch: URL: %d, Body: %d", id, model.ID))
 	}
 
 	err = api.UpdateModel(r.Context(), model)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 
 	model, err = api.ReadModel(r.Context(), model.ID, true)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 	if model == nil {
-		handleError(w, r, http.StatusNotFound, errors.New("Could not find model, but just updated"))
-		return
+		return handleError(http.StatusNotFound, errors.New("Could not find model, but just updated"))
 	}
 
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
-	}
-
-	e := json.NewEncoder(w)
-	err = e.Encode(model)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: model}
 }
 
 //POST /models/:id/notes
-func handleCreateModelNoteEvent(w http.ResponseWriter, r *http.Request) {
+func handleCreateModelNoteEvent(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
 	}
 
 	var note *NoteRequest
@@ -157,60 +114,37 @@ func handleCreateModelNoteEvent(w http.ResponseWriter, r *http.Request) {
 
 	err = d.Decode(&note)
 	if err != nil || note == nil {
-		handleError(w, r, http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
-		return
+		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
 	}
 
 	_, err = api.CreateNoteEvent(r.Context(), id, api.ModelEventLocation, note.Note)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 
 	model, err := api.ReadModel(r.Context(), id, true)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 	if model == nil {
-		handleError(w, r, http.StatusNotFound, errors.New("Could not find model, but just updated"))
-		return
+		return handleError(http.StatusNotFound, errors.New("Could not find model, but just updated"))
 	}
 
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: model}
 
-	e := json.NewEncoder(w)
-	err = e.Encode(model)
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
 }
 
 //GET /models/
-func handleReadModels(w http.ResponseWriter, r *http.Request) {
+func handleReadModels(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	includeEvents := false
-	if v := r.URL.Query().Get("events"); v == "true" {
+	if v := r.URL.Query().Get("events"); v == eventsTrue {
 		includeEvents = true
 	}
 
 	models, err := api.ReadModels(r.Context(), includeEvents)
-	if !checkAPIError(w, r, err) {
-		return
+	if resp := checkAPIError(err); resp != nil {
+		return resp
 	}
 
-	tx := r.Context().Value(api.TransactionKey).(*sql.Tx)
-	err = tx.Commit()
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could not commit transaction: %v", err))
-		return
-	}
-
-	e := json.NewEncoder(w)
-	err = e.Encode(&ReadModelsResponse{Models: models})
-	if err != nil {
-		handleError(w, r, http.StatusInternalServerError, fmt.Errorf("Could encode json: %v", err))
-	}
+	return &handlerResponse{Code: http.StatusOK, Body: &ReadModelsResponse{Models: models}}
 }

@@ -20,11 +20,9 @@ func main() {
 
 	s := httpapi.NewMemorySessionStore(time.Minute * time.Duration(config.SessionExpiration))
 
-	r := httpapi.NewRouter(s, db)
+	r := httpapi.NewRouter(os.Stdout, s, db)
 
-	chain := handlers.CombinedLoggingHandler(os.Stdout,
-		handlers.CompressHandler(
-			http.StripPrefix(config.Prefix, r)))
+	chain := handlers.CompressHandler(http.StripPrefix(config.Prefix, r))
 
 	log.Println("Listening on:", config.ListenAddr)
 	log.Println(http.ListenAndServe(config.ListenAddr, chain))
