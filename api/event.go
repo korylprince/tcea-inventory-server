@@ -72,7 +72,7 @@ func CreateEvent(ctx context.Context, id int64, el EventLocation, event *Event) 
 		return 0, &Error{Description: "Could not marshal content json", Type: ErrorTypeServer, Err: err}
 	}
 
-	res, err := tx.Exec(fmt.Sprintf("INSERT INTO %s(%s, user_id, date, type, content) VALUES(?, ?, ?, ?, ?);", el.Table, el.IDField),
+	res, err := tx.Exec("INSERT INTO ?(?, user_id, date, type, content) VALUES(?, ?, ?, ?, ?);", el.Table, el.IDField,
 		id,
 		event.UserID,
 		event.Date,
@@ -142,7 +142,7 @@ func ReadEvents(ctx context.Context, id int64, el EventLocation) ([]*Event, erro
 
 	var events []*Event
 
-	rows, err := tx.Query(fmt.Sprintf("SELECT id, user_id, date, type, content FROM %s WHERE %s=? ORDER BY date;", el.Table, el.IDField), id)
+	rows, err := tx.Query("SELECT id, user_id, date, type, content FROM ? WHERE ?=? ORDER BY date;", el.Table, el.IDField, id)
 	if err != nil {
 		return nil, &Error{Description: fmt.Sprintf("Could not query events for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}
 	}
