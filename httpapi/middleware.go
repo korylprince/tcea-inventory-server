@@ -24,7 +24,7 @@ type handlerResponse struct {
 
 type returnHandler func(http.ResponseWriter, *http.Request) *handlerResponse
 
-const logTemplate = "Date: {{.Date}}{{if .User}}, User: {{.User.ID}}:{{.User.Email}}{{- end}}, Status: {{.Status}}({{.Code}}), Path: {{.Path}}{{if .Query}}?{{.Query}}{{- end}}{{if .Err}}, Error: {{.Err}}{{- end}}\n"
+const logTemplate = "{{.Date}} {{.Status}}({{.Code}}) {{.Path}}{{if .Query}}?{{.Query}}{{- end}}{{if .User}}, User: {{.User.ID}}:{{.User.Email}}{{- end}}{{if .Err}}, Error: {{.Err}}{{- end}}\n"
 
 type logData struct {
 	Date   string
@@ -41,7 +41,7 @@ func logMiddleware(next returnHandler, writer io.Writer) http.Handler {
 		resp := next(w, r)
 
 		err := template.Must(template.New("log").Parse(logTemplate)).Execute(writer, &logData{
-			Date:   time.Now().Format("2006-01-02:15:04:05Z-0700"),
+			Date:   time.Now().Format("2006-01-02:15:04:05 -0700"),
 			User:   resp.User,
 			Status: http.StatusText(resp.Code),
 			Code:   resp.Code,
