@@ -205,9 +205,9 @@ func ReadModels(ctx context.Context, includeEvents bool) ([]*Model, error) {
 
 	if includeEvents {
 		for _, m := range models {
-			events, err := ReadEvents(ctx, m.ID, ModelEventLocation)
-			if err != nil {
-				return nil, err
+			events, rErr := ReadEvents(ctx, m.ID, ModelEventLocation)
+			if rErr != nil {
+				return nil, rErr
 			}
 			m.Events = events
 		}
