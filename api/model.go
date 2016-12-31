@@ -66,7 +66,12 @@ func CreateModel(ctx context.Context, model *Model) (id int64, err error) {
 		return 0, &Error{Description: "Could not fetch Model id", Type: ErrorTypeServer, Err: err}
 	}
 
-	if _, err := CreateCreatedEvent(ctx, id, ModelEventLocation); err != nil {
+	c := &CreatedContent{Fields: []*CreatedField{
+		&CreatedField{Name: "manufacturer", Value: model.Manufacturer},
+		&CreatedField{Name: "model", Value: model.Model},
+	}}
+
+	if _, err := CreateCreatedEvent(ctx, id, ModelEventLocation, c); err != nil {
 		return 0, &Error{Description: "Could not add Created Event", Type: ErrorTypeServer, Err: err}
 	}
 
@@ -162,18 +167,18 @@ func UpdateModel(ctx context.Context, model *Model) error {
 		return &Error{Description: fmt.Sprintf("Could not update Model(%d)", model.ID), Type: ErrorTypeServer, Err: err}
 	}
 
+	c := &ModifiedContent{Fields: []*ModifiedField{}}
+
 	if oldModel.Manufacturer != model.Manufacturer {
-		_, err := CreateModifiedEvent(ctx, model.ID, ModelEventLocation, "manufacturer", oldModel.Manufacturer, model.Manufacturer)
-		if err != nil {
-			return &Error{Description: fmt.Sprintf("Could not created Modified Event for Model(%d).Manufacturer", model.ID), Type: ErrorTypeServer, Err: err}
-		}
+		c.Fields = append(c.Fields, &ModifiedField{Name: "manufacturer", OldValue: oldModel.Manufacturer, NewValue: model.Manufacturer})
 	}
 
 	if oldModel.Model != model.Model {
-		_, err := CreateModifiedEvent(ctx, model.ID, ModelEventLocation, "model", oldModel.Model, model.Model)
-		if err != nil {
-			return &Error{Description: fmt.Sprintf("Could not created Modified Event for Model(%d).Model", model.ID), Type: ErrorTypeServer, Err: err}
-		}
+		c.Fields = append(c.Fields, &ModifiedField{Name: "model", OldValue: oldModel.Model, NewValue: model.Model})
+	}
+	_, err = CreateModifiedEvent(ctx, model.ID, ModelEventLocation, c)
+	if err != nil {
+		return &Error{Description: fmt.Sprintf("Could not created Modified Event for Model(%d)", model.ID), Type: ErrorTypeServer, Err: err}
 	}
 
 	return nil

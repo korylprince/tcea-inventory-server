@@ -6,13 +6,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
-//Content is a generic interface representing event content
-type Content interface {
-	Validate() error
+//CreatedField represents a field for a CreatedContent
+type CreatedField struct {
+	Name  string      `json:"name"`
+	Value interface{} `json:"value"`
+}
+
+//CreatedContent represents content for a created event
+type CreatedContent struct {
+	Fields []*CreatedField `json:"fields"`
 }
 
 //NoteContent represents content for a note event
@@ -20,35 +25,25 @@ type NoteContent struct {
 	Note string `json:"note"`
 }
 
-//Validate cleans and validates the given NoteContent
-func (c *NoteContent) Validate() error {
-	c.Note = strings.TrimSpace(c.Note)
-
-	if c.Note == "" {
-		return errors.New("note must not be empty")
-	}
-	return nil
-}
-
-//ModifiedContent represents content for a modified event
-type ModifiedContent struct {
-	Field    string      `json:"field"`
+//ModifiedField represents a field for a ModifiedContent
+type ModifiedField struct {
+	Name     string      `json:"name"`
 	OldValue interface{} `json:"old_value"`
 	NewValue interface{} `json:"new_value"`
 }
 
-//Validate satisfies the Content interface. Since a ModifiedContent will only ever be created by the server, there is no need to validate it; this function always returns nil
-func (c *ModifiedContent) Validate() error {
-	return nil
+//ModifiedContent represents content for a modified event
+type ModifiedContent struct {
+	Fields []*ModifiedField `json:"fields"`
 }
 
 //Event represents an event that has happened
 type Event struct {
-	ID      int64     `json:"-"`
-	Date    time.Time `json:"date"`
-	UserID  int64     `json:"user_id"`
-	Type    string    `json:"type"`
-	Content Content   `json:"content"`
+	ID      int64       `json:"-"`
+	Date    time.Time   `json:"date"`
+	UserID  int64       `json:"user_id"`
+	Type    string      `json:"type"`
+	Content interface{} `json:"content"`
 }
 
 //User resolves the UserID field to a User
@@ -91,24 +86,24 @@ func CreateEvent(ctx context.Context, id int64, el EventLocation, event *Event) 
 	return id, nil
 }
 
-//CreateCreatedEvent creates a new Created Event for the given type and id
-func CreateCreatedEvent(ctx context.Context, id int64, el EventLocation) (eventID int64, err error) {
+//CreateCreatedEvent creates a new Created Event for the given type, id, and content
+func CreateCreatedEvent(ctx context.Context, id int64, el EventLocation, c *CreatedContent) (eventID int64, err error) {
 	user := ctx.Value(UserKey).(*User)
 
 	return CreateEvent(ctx, id, el, &Event{
-		Date:   time.Now(),
-		UserID: user.ID,
-		Type:   "created",
+		Date:    time.Now(),
+		UserID:  user.ID,
+		Type:    "created",
+		Content: c,
 	})
 }
 
 //CreateNoteEvent creates a new Note Event for the given type and id with the given note text
 func CreateNoteEvent(ctx context.Context, id int64, el EventLocation, note string) (eventID int64, err error) {
-	c := &NoteContent{Note: note}
-
-	if err := c.Validate(); err != nil {
-		return 0, &Error{Description: "Could not validate note", Type: ErrorTypeUser, Err: err}
+	if note == "" {
+		return 0, &Error{Description: "Could not validate note", Type: ErrorTypeUser, Err: errors.New("note cannot be empty")}
 	}
+	c := &NoteContent{Note: note}
 
 	user := ctx.Value(UserKey).(*User)
 
@@ -120,19 +115,15 @@ func CreateNoteEvent(ctx context.Context, id int64, el EventLocation, note strin
 	})
 }
 
-//CreateModifiedEvent creates a new Modified Event for the given type and id with the given field and values
-func CreateModifiedEvent(ctx context.Context, id int64, el EventLocation, field string, oldValue, newValue interface{}) (eventID int64, err error) {
+//CreateModifiedEvent creates a new Modified Event for the given type, id, and content
+func CreateModifiedEvent(ctx context.Context, id int64, el EventLocation, c *ModifiedContent) (eventID int64, err error) {
 	user := ctx.Value(UserKey).(*User)
 
 	return CreateEvent(ctx, id, el, &Event{
-		Date:   time.Now(),
-		UserID: user.ID,
-		Type:   "modified",
-		Content: &ModifiedContent{
-			Field:    field,
-			OldValue: oldValue,
-			NewValue: newValue,
-		},
+		Date:    time.Now(),
+		UserID:  user.ID,
+		Type:    "modified",
+		Content: c,
 	})
 }
 
@@ -156,7 +147,14 @@ func ReadEvents(ctx context.Context, id int64, el EventLocation) ([]*Event, erro
 			return nil, &Error{Description: fmt.Sprintf("Could not scan event row for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}
 		}
 
-		if e.Type == "note" {
+		if e.Type == "created" {
+			var created *CreatedContent
+			if err := json.Unmarshal(content, &created); err != nil {
+				return nil, &Error{Description: fmt.Sprintf("Could not unmarshal created content json for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}
+			}
+			e.Content = created
+
+		} else if e.Type == "note" {
 			var note *NoteContent
 			if err := json.Unmarshal(content, &note); err != nil {
 				return nil, &Error{Description: fmt.Sprintf("Could not unmarshal note content json for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}

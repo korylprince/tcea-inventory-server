@@ -102,7 +102,14 @@ func CreateDevice(ctx context.Context, device *Device) (id int64, err error) {
 		return 0, &Error{Description: "Could not fetch Device", Type: ErrorTypeServer, Err: err}
 	}
 
-	if _, err := CreateCreatedEvent(ctx, id, DeviceEventLocation); err != nil {
+	c := &CreatedContent{Fields: []*CreatedField{
+		&CreatedField{Name: "serial_number", Value: device.SerialNumber},
+		&CreatedField{Name: "model_id", Value: device.ModelID},
+		&CreatedField{Name: "status", Value: device.Status},
+		&CreatedField{Name: "location", Value: device.Location},
+	}}
+
+	if _, err := CreateCreatedEvent(ctx, id, DeviceEventLocation, c); err != nil {
 		return 0, &Error{Description: "Could not add Created Event", Type: ErrorTypeServer, Err: err}
 	}
 
@@ -199,34 +206,28 @@ func UpdateDevice(ctx context.Context, device *Device) error {
 		return &Error{Description: fmt.Sprintf("Could not update Device(%d)", device.ID), Type: ErrorTypeServer, Err: err}
 	}
 
+	c := &ModifiedContent{Fields: []*ModifiedField{}}
+
 	if oldDevice.SerialNumber != device.SerialNumber {
-		_, err := CreateModifiedEvent(ctx, device.ID, DeviceEventLocation, "serial_number", oldDevice.SerialNumber, device.SerialNumber)
-		if err != nil {
-			return &Error{Description: fmt.Sprintf("Could not created Modified Event Device(%d).SerialNumber", device.ID), Type: ErrorTypeServer, Err: err}
-		}
+		c.Fields = append(c.Fields, &ModifiedField{Name: "serial_number", OldValue: oldDevice.SerialNumber, NewValue: device.SerialNumber})
 	}
 
 	if oldDevice.ModelID != device.ModelID {
-		_, err := CreateModifiedEvent(ctx, device.ID, DeviceEventLocation, "model_id", oldDevice.ModelID, device.ModelID)
-		if err != nil {
-			return &Error{Description: fmt.Sprintf("Could not created Modified Event Device(%d).ModelID", device.ID), Type: ErrorTypeServer, Err: err}
-		}
+		c.Fields = append(c.Fields, &ModifiedField{Name: "model_id", OldValue: oldDevice.ModelID, NewValue: device.ModelID})
 	}
 
 	if oldDevice.Status != device.Status {
-		_, err := CreateModifiedEvent(ctx, device.ID, DeviceEventLocation, "status", oldDevice.Status, device.Status)
-		if err != nil {
-			return &Error{Description: fmt.Sprintf("Could not created Modified Event Device(%d).Status", device.ID), Type: ErrorTypeServer, Err: err}
-		}
+		c.Fields = append(c.Fields, &ModifiedField{Name: "status", OldValue: oldDevice.Status, NewValue: device.Status})
 	}
 
 	if oldDevice.Location != device.Location {
-		_, err := CreateModifiedEvent(ctx, device.ID, DeviceEventLocation, "location", oldDevice.Location, device.Location)
-		if err != nil {
-			return &Error{Description: fmt.Sprintf("Could not created Modified Event Device(%d).Location", device.ID), Type: ErrorTypeServer, Err: err}
-		}
+		c.Fields = append(c.Fields, &ModifiedField{Name: "location", OldValue: oldDevice.Location, NewValue: device.Location})
 	}
 
+	_, err = CreateModifiedEvent(ctx, device.ID, DeviceEventLocation, c)
+	if err != nil {
+		return &Error{Description: fmt.Sprintf("Could not created Modified Event Device(%d)", device.ID), Type: ErrorTypeServer, Err: err}
+	}
 	return nil
 }
 
