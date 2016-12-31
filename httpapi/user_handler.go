@@ -162,7 +162,7 @@ func handleAuthenticate(s SessionStore) returnHandler {
 
 		err = user.Authenticate(r.Context(), req.Password)
 		if err != nil {
-			return handleError(http.StatusUnauthorized, fmt.Errorf("Could not authenticate user: %v", err))
+			return handleError(http.StatusUnauthorized, fmt.Errorf("Could not authenticate user %d:%s: %v", user.ID, user.Email, err))
 		}
 
 		key, err := s.Create(user.ID)
