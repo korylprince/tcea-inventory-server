@@ -179,18 +179,36 @@ func UpdateModel(ctx context.Context, model *Model) error {
 	return nil
 }
 
-//ReadModels returns all Models or an error if one occurred.
-//If includeEvents is true the Events field will be populated
-func ReadModels(ctx context.Context, includeEvents bool) ([]*Model, error) {
+//QueryModel returns all Models matching the given manufacturer and model or an error if one occurred.
+func QueryModel(ctx context.Context, manufacturer, model string) ([]*Model, error) {
 	tx := ctx.Value(TransactionKey).(*sql.Tx)
 
-	var models []*Model
+	var criteria []string
+	var parameters []interface{}
 
-	rows, err := tx.Query("SELECT id, manufacturer, model FROM model ORDER BY manufacturer, model;")
+	if manufacturer != "" {
+		criteria = append(criteria, "manufacturer LIKE ?")
+		parameters = append(parameters, fmt.Sprintf("%%%s%%", manufacturer))
+	}
+
+	if model != "" {
+		criteria = append(criteria, "model LIKE ?")
+		parameters = append(parameters, fmt.Sprintf("%%%s%%", model))
+	}
+
+	var query string
+
+	if len(criteria) > 0 {
+		query = "WHERE " + strings.Join(criteria, " AND ")
+	}
+
+	rows, err := tx.Query(fmt.Sprintf("SELECT id, manufacturer, model FROM model %s ORDER BY manufacturer, model;", query), parameters...)
 	if err != nil {
 		return nil, &Error{Description: "Could not query Models", Type: ErrorTypeServer, Err: err}
 	}
 	defer rows.Close()
+
+	var models []*Model
 
 	for rows.Next() {
 		m := new(Model)
@@ -200,17 +218,6 @@ func ReadModels(ctx context.Context, includeEvents bool) ([]*Model, error) {
 		}
 
 		models = append(models, m)
-
-	}
-
-	if includeEvents {
-		for _, m := range models {
-			events, rErr := ReadEvents(ctx, m.ID, ModelEventLocation)
-			if rErr != nil {
-				return nil, rErr
-			}
-			m.Events = events
-		}
 	}
 
 	err = rows.Err()

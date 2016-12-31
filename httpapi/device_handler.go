@@ -13,7 +13,7 @@ import (
 
 //POST /devices
 func handleCreateDevice(w http.ResponseWriter, r *http.Request) *handlerResponse {
-	var req *DeviceCreateRequest
+	var req *CreateDeviceRequest
 	d := json.NewDecoder(r.Body)
 
 	err := d.Decode(&req)
@@ -131,4 +131,20 @@ func handleCreateDeviceNoteEvent(w http.ResponseWriter, r *http.Request) *handle
 	}
 
 	return &handlerResponse{Code: http.StatusOK, Body: device}
+}
+
+//GET /devices/
+func handleQueryDevice(w http.ResponseWriter, r *http.Request) *handlerResponse {
+	devices, err := api.QueryDevice(r.Context(),
+		r.URL.Query().Get("serial_number"),
+		r.URL.Query().Get("manufacturer"),
+		r.URL.Query().Get("model"),
+		r.URL.Query().Get("status"),
+		r.URL.Query().Get("location"),
+	)
+	if resp := checkAPIError(err); resp != nil {
+		return resp
+	}
+
+	return &handlerResponse{Code: http.StatusOK, Body: &QueryDeviceResponse{Devices: devices}}
 }

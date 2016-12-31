@@ -13,7 +13,7 @@ import (
 
 //POST /models
 func handleCreateModel(w http.ResponseWriter, r *http.Request) *handlerResponse {
-	var req *ModelCreateRequest
+	var req *CreateModelRequest
 	d := json.NewDecoder(r.Body)
 
 	err := d.Decode(&req)
@@ -135,16 +135,14 @@ func handleCreateModelNoteEvent(w http.ResponseWriter, r *http.Request) *handler
 }
 
 //GET /models/
-func handleReadModels(w http.ResponseWriter, r *http.Request) *handlerResponse {
-	includeEvents := false
-	if v := r.URL.Query().Get("events"); v == eventsTrue {
-		includeEvents = true
-	}
-
-	models, err := api.ReadModels(r.Context(), includeEvents)
+func handleQueryModel(w http.ResponseWriter, r *http.Request) *handlerResponse {
+	models, err := api.QueryModel(r.Context(),
+		r.URL.Query().Get("manufacturer"),
+		r.URL.Query().Get("model"),
+	)
 	if resp := checkAPIError(err); resp != nil {
 		return resp
 	}
 
-	return &handlerResponse{Code: http.StatusOK, Body: &ReadModelsResponse{Models: models}}
+	return &handlerResponse{Code: http.StatusOK, Body: &QueryModelResponse{Models: models}}
 }

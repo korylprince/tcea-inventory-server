@@ -2,20 +2,20 @@ package httpapi
 
 import "github.com/korylprince/tcea-inventory-server/api"
 
-//ModelCreateRequest is a Model Create and Note Create request combined
-type ModelCreateRequest struct {
+//CreateModelRequest is a Model Create and Note Create request combined
+type CreateModelRequest struct {
 	Model *api.Model `json:"model"`
 	Note  string     `json:"note"`
 }
 
-//DeviceCreateRequest is a Device Create and Note Create request combined
-type DeviceCreateRequest struct {
+//CreateDeviceRequest is a Device Create and Note Create request combined
+type CreateDeviceRequest struct {
 	Device *api.Device `json:"device"`
 	Note   string      `json:"note"`
 }
 
-//UserCreateRequest is a request to create a new User
-type UserCreateRequest struct {
+//CreateUserRequest is a request to create a new User
+type CreateUserRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Name     string `json:"name"`
@@ -34,6 +34,6 @@ type NoteRequest struct {
 
 //AuthenticateRequest is an email/password authentication request
 type AuthenticateRequest struct {
-	Email    string
-	Password string
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }

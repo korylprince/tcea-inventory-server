@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
@@ -23,7 +24,7 @@ type Device struct {
 	ModelID      int64    `json:"model_id"`
 	Status       Status   `json:"status"`
 	Location     string   `json:"location"`
-	Events       []*Event `json:"events"`
+	Events       []*Event `json:"events,omitempty"`
 }
 
 //Model resolves the ModelID field to a Model.
@@ -227,4 +228,75 @@ func UpdateDevice(ctx context.Context, device *Device) error {
 	}
 
 	return nil
+}
+
+//QueryDevice returns all Devices matching the given serial number, manufacturer, model, status, or location, or an error if one occurred.
+func QueryDevice(ctx context.Context, serialNumber, manufacturer, model, status, location string) ([]*Device, error) {
+	tx := ctx.Value(TransactionKey).(*sql.Tx)
+
+	var criteria []string
+	var parameters []interface{}
+
+	if serialNumber != "" {
+		criteria = append(criteria, "serial_number LIKE ?")
+		parameters = append(parameters, fmt.Sprintf("%%%s%%", serialNumber))
+	}
+
+	if model != "" || manufacturer != "" {
+		models, err := QueryModel(ctx, manufacturer, model)
+		if err != nil {
+			return nil, err
+		}
+		if len(models) == 0 {
+			return nil, nil
+		}
+
+		var ids []string
+		for _, m := range models {
+			ids = append(ids, strconv.FormatInt(m.ID, 10))
+		}
+
+		criteria = append(criteria, fmt.Sprintf("model_id IN (%s)", strings.Join(ids, ", ")))
+	}
+
+	if status != "" {
+		criteria = append(criteria, "status LIKE ?")
+		parameters = append(parameters, fmt.Sprintf("%%%s%%", status))
+	}
+
+	if location != "" {
+		criteria = append(criteria, "location LIKE ?")
+		parameters = append(parameters, fmt.Sprintf("%%%s%%", location))
+	}
+
+	var query string
+
+	if len(criteria) > 0 {
+		query = "WHERE " + strings.Join(criteria, " AND ")
+	}
+
+	rows, err := tx.Query(fmt.Sprintf("SELECT id, serial_number, model_id, status, location FROM device %s ORDER BY id;", query), parameters...)
+	if err != nil {
+		return nil, &Error{Description: "Could not query Devices", Type: ErrorTypeServer, Err: err}
+	}
+	defer rows.Close()
+
+	var devices []*Device
+
+	for rows.Next() {
+		d := new(Device)
+		err := rows.Scan(&(d.ID), &(d.SerialNumber), &(d.ModelID), &(d.Status), &(d.Location))
+		if err != nil {
+			return nil, &Error{Description: "Could not scan Device row", Type: ErrorTypeServer, Err: err}
+		}
+
+		devices = append(devices, d)
+	}
+
+	err = rows.Err()
+	if err != nil {
+		return nil, &Error{Description: "Could not scan Device rows", Type: ErrorTypeServer, Err: err}
+	}
+
+	return devices, nil
 }

@@ -13,7 +13,7 @@ import (
 
 //POST /users
 func handleCreateUserWithCredentials(w http.ResponseWriter, r *http.Request) *handlerResponse {
-	var req *UserCreateRequest
+	var req *CreateUserRequest
 	d := json.NewDecoder(r.Body)
 
 	err := d.Decode(&req)

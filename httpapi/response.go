@@ -8,9 +8,14 @@ type AuthenticateResponse struct {
 	User       *api.User `json:"user"`
 }
 
-//ReadModelsResponse contains a list of Models
-type ReadModelsResponse struct {
+//QueryModelResponse contains a list of Models
+type QueryModelResponse struct {
 	Models []*api.Model `json:"models"`
+}
+
+//QueryDeviceResponse contains a list of Models
+type QueryDeviceResponse struct {
+	Devices []*api.Device `json:"devices"`
 }
 
 //ReadStatusesResponse contains a list of allowed Statuses
