@@ -22,7 +22,11 @@ func main() {
 
 	r := httpapi.NewRouter(os.Stdout, s, db)
 
-	chain := handlers.CompressHandler(http.StripPrefix(config.Prefix, r))
+	chain := handlers.CompressHandler(handlers.CORS(
+		handlers.AllowedOrigins([]string{"*"}),
+		handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"}),
+		handlers.AllowedHeaders([]string{"Accept", "Content-Type", "Origin", "X-Session-Key"}),
+	)(http.StripPrefix(config.Prefix, r)))
 
 	log.Println("Listening on:", config.ListenAddr)
 	log.Println(http.ListenAndServe(config.ListenAddr, chain))
