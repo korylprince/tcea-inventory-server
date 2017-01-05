@@ -24,13 +24,14 @@ type handlerResponse struct {
 
 type returnHandler func(http.ResponseWriter, *http.Request) *handlerResponse
 
-const logTemplate = "{{.Date}} {{.Status}}({{.Code}}) {{.Path}}{{if .Query}}?{{.Query}}{{end}}{{if .User}}, User: {{.User.ID}}:{{.User.Email}}{{end}}{{if .Err}}, Error: {{.Err}}{{end}}\n"
+const logTemplate = "{{.Date}} {{.Method}} {{.Path}}{{if .Query}}?{{.Query}}{{end}} {{.Code}} ({{.Status}}) {{if .User}}, User: {{.User.ID}}:{{.User.Email}}{{end}}{{if .Err}}, Error: {{.Err}}{{end}}\n"
 
 type logData struct {
 	Date   string
 	User   *api.User
 	Status string
 	Code   int
+	Method string
 	Path   string
 	Query  string
 	Err    error
@@ -45,6 +46,7 @@ func logMiddleware(next returnHandler, writer io.Writer) http.Handler {
 			User:   resp.User,
 			Status: http.StatusText(resp.Code),
 			Code:   resp.Code,
+			Method: r.Method,
 			Path:   r.URL.Path,
 			Query:  r.URL.RawQuery,
 			Err:    resp.Err,
