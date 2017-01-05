@@ -24,7 +24,7 @@ type handlerResponse struct {
 
 type returnHandler func(http.ResponseWriter, *http.Request) *handlerResponse
 
-const logTemplate = "{{.Date}} {{.Method}} {{.Path}}{{if .Query}}?{{.Query}}{{end}} {{.Code}} ({{.Status}}) {{if .User}}, User: {{.User.ID}}:{{.User.Email}}{{end}}{{if .Err}}, Error: {{.Err}}{{end}}\n"
+const logTemplate = "{{.Date}} {{.Method}} {{.Path}}{{if .Query}}?{{.Query}}{{end}} {{.Code}} ({{.Status}}){{if .User}}, User: {{.User.ID}}:{{.User.Email}}{{end}}{{if .Err}}, Error: {{.Err}}{{end}}\n"
 
 type logData struct {
 	Date   string
