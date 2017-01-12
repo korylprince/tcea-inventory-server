@@ -135,6 +135,10 @@ func handleCreateDeviceNoteEvent(w http.ResponseWriter, r *http.Request) *handle
 
 //GET /devices/
 func handleQueryDevice(w http.ResponseWriter, r *http.Request) *handlerResponse {
+	if r.URL.Query().Get("search") != "" {
+		return handleSimpleQueryDevice(w, r)
+	}
+
 	devices, err := api.QueryDevice(r.Context(),
 		r.URL.Query().Get("serial_number"),
 		r.URL.Query().Get("manufacturer"),
@@ -142,6 +146,16 @@ func handleQueryDevice(w http.ResponseWriter, r *http.Request) *handlerResponse 
 		r.URL.Query().Get("status"),
 		r.URL.Query().Get("location"),
 	)
+	if resp := checkAPIError(err); resp != nil {
+		return resp
+	}
+
+	return &handlerResponse{Code: http.StatusOK, Body: &QueryDeviceResponse{Devices: devices}}
+}
+
+//GET /devices/
+func handleSimpleQueryDevice(w http.ResponseWriter, r *http.Request) *handlerResponse {
+	devices, err := api.SimpleQueryDevice(r.Context(), r.URL.Query().Get("search"))
 	if resp := checkAPIError(err); resp != nil {
 		return resp
 	}

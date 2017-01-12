@@ -301,3 +301,46 @@ func QueryDevice(ctx context.Context, serialNumber, manufacturer, model, status,
 
 	return devices, nil
 }
+
+const simpleQueryDeviceSQL = `
+SELECT device.id, device.serial_number, device.model_id, device.status, device.location
+	FROM device JOIN model ON device.model_id = model.id WHERE
+		device.serial_number LIKE ? OR
+		device.status LIKE ? OR
+		device.location LIKE ? OR
+		model.manufacturer LIKE ? OR
+		model.model LIKE ?
+	ORDER BY id;
+`
+
+//SimpleQueryDevice returns all Devices matching the given search (searching all fields), or an error if one occurred.
+func SimpleQueryDevice(ctx context.Context, search string) ([]*Device, error) {
+	tx := ctx.Value(TransactionKey).(*sql.Tx)
+
+	s := fmt.Sprintf("%%%s%%", search)
+
+	rows, err := tx.Query(simpleQueryDeviceSQL, s, s, s, s, s)
+	if err != nil {
+		return nil, &Error{Description: "Could not query Devices", Type: ErrorTypeServer, Err: err}
+	}
+	defer rows.Close()
+
+	var devices []*Device
+
+	for rows.Next() {
+		d := new(Device)
+		err := rows.Scan(&(d.ID), &(d.SerialNumber), &(d.ModelID), &(d.Status), &(d.Location))
+		if err != nil {
+			return nil, &Error{Description: "Could not scan Device row", Type: ErrorTypeServer, Err: err}
+		}
+
+		devices = append(devices, d)
+	}
+
+	err = rows.Err()
+	if err != nil {
+		return nil, &Error{Description: "Could not scan Device rows", Type: ErrorTypeServer, Err: err}
+	}
+
+	return devices, nil
+}
