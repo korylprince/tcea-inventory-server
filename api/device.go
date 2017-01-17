@@ -286,9 +286,9 @@ func QueryDevice(ctx context.Context, serialNumber, manufacturer, model, status,
 
 	for rows.Next() {
 		d := new(Device)
-		err := rows.Scan(&(d.ID), &(d.SerialNumber), &(d.ModelID), &(d.Status), &(d.Location))
-		if err != nil {
-			return nil, &Error{Description: "Could not scan Device row", Type: ErrorTypeServer, Err: err}
+		sErr := rows.Scan(&(d.ID), &(d.SerialNumber), &(d.ModelID), &(d.Status), &(d.Location))
+		if sErr != nil {
+			return nil, &Error{Description: "Could not scan Device row", Type: ErrorTypeServer, Err: sErr}
 		}
 
 		devices = append(devices, d)
@@ -329,9 +329,9 @@ func SimpleQueryDevice(ctx context.Context, search string) ([]*Device, error) {
 
 	for rows.Next() {
 		d := new(Device)
-		err := rows.Scan(&(d.ID), &(d.SerialNumber), &(d.ModelID), &(d.Status), &(d.Location))
-		if err != nil {
-			return nil, &Error{Description: "Could not scan Device row", Type: ErrorTypeServer, Err: err}
+		sErr := rows.Scan(&(d.ID), &(d.SerialNumber), &(d.ModelID), &(d.Status), &(d.Location))
+		if sErr != nil {
+			return nil, &Error{Description: "Could not scan Device row", Type: ErrorTypeServer, Err: sErr}
 		}
 
 		devices = append(devices, d)
