@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
@@ -17,19 +16,20 @@ var DeviceEventLocation = EventLocation{
 	IDField: "device_id",
 }
 
-//Device represents an inventoried device
+//Device represents an inventoried device. ModelID is populated for Create, Read, and Update. Model is populated for Queries.
 type Device struct {
 	ID           int64    `json:"id"`
 	SerialNumber string   `json:"serial_number"`
-	ModelID      int64    `json:"model_id"`
+	ModelID      int64    `json:"model_id,omitempty"`
 	Status       Status   `json:"status"`
 	Location     string   `json:"location"`
+	Model        *Model   `json:"model,omitempty"`
 	Events       []*Event `json:"events,omitempty"`
 }
 
-//Model resolves the ModelID field to a Model.
+//ReadModel resolves the ModelID field to a Model.
 //If includeEvents is true the Events field will be populated
-func (d *Device) Model(ctx context.Context, includeEvents bool) (*Model, error) {
+func (d *Device) ReadModel(ctx context.Context, includeEvents bool) (*Model, error) {
 	return ReadModel(ctx, d.ModelID, includeEvents)
 }
 
@@ -61,7 +61,7 @@ func (d *Device) Validate(ctx context.Context) error {
 		return err
 	}
 
-	if model, err := d.Model(ctx, false); model == nil || err != nil {
+	if model, err := d.ReadModel(ctx, false); model == nil || err != nil {
 		return fmt.Errorf("model (%d) must be a valid model", d.ModelID)
 	}
 
@@ -239,34 +239,27 @@ func QueryDevice(ctx context.Context, serialNumber, manufacturer, model, status,
 	var parameters []interface{}
 
 	if serialNumber != "" {
-		criteria = append(criteria, "serial_number LIKE ?")
+		criteria = append(criteria, "d.serial_number LIKE ?")
 		parameters = append(parameters, fmt.Sprintf("%%%s%%", serialNumber))
 	}
 
-	if model != "" || manufacturer != "" {
-		models, err := QueryModel(ctx, manufacturer, model)
-		if err != nil {
-			return nil, err
-		}
-		if len(models) == 0 {
-			return nil, nil
-		}
+	if manufacturer != "" {
+		criteria = append(criteria, "m.manufacturer LIKE ?")
+		parameters = append(parameters, fmt.Sprintf("%%%s%%", manufacturer))
+	}
 
-		var ids []string
-		for _, m := range models {
-			ids = append(ids, strconv.FormatInt(m.ID, 10))
-		}
-
-		criteria = append(criteria, fmt.Sprintf("model_id IN (%s)", strings.Join(ids, ", ")))
+	if model != "" {
+		criteria = append(criteria, "m.model LIKE ?")
+		parameters = append(parameters, fmt.Sprintf("%%%s%%", model))
 	}
 
 	if status != "" {
-		criteria = append(criteria, "status LIKE ?")
+		criteria = append(criteria, "d.status LIKE ?")
 		parameters = append(parameters, fmt.Sprintf("%%%s%%", status))
 	}
 
 	if location != "" {
-		criteria = append(criteria, "location LIKE ?")
+		criteria = append(criteria, "d.location LIKE ?")
 		parameters = append(parameters, fmt.Sprintf("%%%s%%", location))
 	}
 
@@ -276,7 +269,7 @@ func QueryDevice(ctx context.Context, serialNumber, manufacturer, model, status,
 		query = "WHERE " + strings.Join(criteria, " AND ")
 	}
 
-	rows, err := tx.Query(fmt.Sprintf("SELECT id, serial_number, model_id, status, location FROM device %s ORDER BY id;", query), parameters...)
+	rows, err := tx.Query(fmt.Sprintf("SELECT d.id, d.serial_number, m.id, m.manufacturer, m.model, d.status, d.location FROM device AS d JOIN model AS m ON d.model_id = m.id %s ORDER BY d.id;", query), parameters...)
 	if err != nil {
 		return nil, &Error{Description: "Could not query Devices", Type: ErrorTypeServer, Err: err}
 	}
@@ -285,8 +278,8 @@ func QueryDevice(ctx context.Context, serialNumber, manufacturer, model, status,
 	var devices []*Device
 
 	for rows.Next() {
-		d := new(Device)
-		sErr := rows.Scan(&(d.ID), &(d.SerialNumber), &(d.ModelID), &(d.Status), &(d.Location))
+		d := &Device{Model: new(Model)}
+		sErr := rows.Scan(&(d.ID), &(d.SerialNumber), &(d.Model.ID), &(d.Model.Manufacturer), &(d.Model.Model), &(d.Status), &(d.Location))
 		if sErr != nil {
 			return nil, &Error{Description: "Could not scan Device row", Type: ErrorTypeServer, Err: sErr}
 		}
@@ -303,14 +296,14 @@ func QueryDevice(ctx context.Context, serialNumber, manufacturer, model, status,
 }
 
 const simpleQueryDeviceSQL = `
-SELECT device.id, device.serial_number, device.model_id, device.status, device.location
-	FROM device JOIN model ON device.model_id = model.id WHERE
-		device.serial_number LIKE ? OR
-		device.status LIKE ? OR
-		device.location LIKE ? OR
-		model.manufacturer LIKE ? OR
-		model.model LIKE ?
-	ORDER BY id;
+SELECT d.id, d.serial_number, m.id, m.manufacturer, m.model, d.status, d.location
+	FROM device AS d JOIN model AS m ON d.model_id = m.id WHERE
+		d.serial_number LIKE ? OR
+		d.status LIKE ? OR
+		d.location LIKE ? OR
+		m.manufacturer LIKE ? OR
+		m.model LIKE ?
+	ORDER BY d.id;
 `
 
 //SimpleQueryDevice returns all Devices matching the given search (searching all fields), or an error if one occurred.
@@ -328,8 +321,8 @@ func SimpleQueryDevice(ctx context.Context, search string) ([]*Device, error) {
 	var devices []*Device
 
 	for rows.Next() {
-		d := new(Device)
-		sErr := rows.Scan(&(d.ID), &(d.SerialNumber), &(d.ModelID), &(d.Status), &(d.Location))
+		d := &Device{Model: new(Model)}
+		sErr := rows.Scan(&(d.ID), &(d.SerialNumber), &(d.Model.ID), &(d.Model.Manufacturer), &(d.Model.Model), &(d.Status), &(d.Location))
 		if sErr != nil {
 			return nil, &Error{Description: "Could not scan Device row", Type: ErrorTypeServer, Err: sErr}
 		}
