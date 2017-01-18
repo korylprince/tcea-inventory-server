@@ -37,6 +37,8 @@ func NewRouter(w io.Writer, s SessionStore, db *sql.DB) http.Handler {
 	r.Path("/users/{id:[0-9]+}").Methods("POST").Handler(m(handleUpdateUser))
 	r.Path("/users/{id:[0-9]+}/password").Methods("POST").Handler(m(handleChangeUserPassword))
 
+	r.Path("/stats/").Methods("GET").Handler(m(handleReadStats))
+
 	r.Path("/auth").Methods("POST").Handler(logMiddleware(jsonMiddleware(txMiddleware(handleAuthenticate(s), db)), w))
 
 	r.NotFoundHandler = m(notFoundHandler)
