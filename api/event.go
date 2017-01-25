@@ -9,10 +9,11 @@ import (
 	"time"
 )
 
-//CreatedField represents a field for a CreatedContent
+//CreatedField represents a field for a CreatedContent. If Name is model_id, Model will be populated.
 type CreatedField struct {
 	Name  string      `json:"name"`
 	Value interface{} `json:"value"`
+	Model *Model      `json:"_model,omitempty"`
 }
 
 //CreatedContent represents content for a created event
@@ -25,11 +26,13 @@ type NoteContent struct {
 	Note string `json:"note"`
 }
 
-//ModifiedField represents a field for a ModifiedContent
+//ModifiedField represents a field for a ModifiedContent. If Name is model_id, OldModel and NewModel will be populated.
 type ModifiedField struct {
 	Name     string      `json:"name"`
 	OldValue interface{} `json:"old_value"`
+	OldModel *Model      `json:"_old_model,omitempty"`
 	NewValue interface{} `json:"new_value"`
+	NewModel *Model      `json:"_new_model,omitempty"`
 }
 
 //ModifiedContent represents content for a modified event
@@ -37,18 +40,15 @@ type ModifiedContent struct {
 	Fields []*ModifiedField `json:"fields"`
 }
 
-//Event represents an event that has happened
+//Event represents an event that has happened.
+//UserID should be used when creating and Event and User is used when reading and Event.
 type Event struct {
 	ID      int64       `json:"-"`
 	Date    time.Time   `json:"date"`
 	UserID  int64       `json:"user_id"`
+	User    *User       `json:"_user,omitempty"`
 	Type    string      `json:"type"`
 	Content interface{} `json:"content"`
-}
-
-//User resolves the UserID field to a User
-func (e *Event) User(ctx context.Context) (*User, error) {
-	return ReadUser(ctx, e.UserID)
 }
 
 //EventLocation contains information needed to add events for the given type
@@ -174,6 +174,79 @@ func ReadEvents(ctx context.Context, id int64, el EventLocation) ([]*Event, erro
 
 	if err := rows.Err(); err != nil {
 		return nil, &Error{Description: fmt.Sprintf("Could not scan event rows for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}
+	}
+
+	userCache := make(map[int64]*User)
+	modelCache := make(map[int64]*Model)
+
+	//populate models for created and modified events
+	for _, e := range events {
+		if user, ok := userCache[e.UserID]; ok {
+			e.User = user
+		} else {
+			user, err := ReadUser(ctx, e.UserID)
+			if err != nil {
+				return nil, &Error{Description: fmt.Sprintf("Could not read event user for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}
+			}
+			e.User = user
+			userCache[e.UserID] = user
+		}
+
+		if e.Type == "created" {
+			content := e.Content.(*CreatedContent)
+			for _, f := range content.Fields {
+				if f.Name == "model_id" {
+					newID := int64(f.Value.(float64))
+
+					if model, ok := modelCache[newID]; ok {
+						f.Model = model
+					} else {
+						model, err := ReadModel(ctx, newID, false)
+						if err != nil {
+							return nil, &Error{Description: fmt.Sprintf("Could not read created event model for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}
+						}
+
+						f.Model = model
+						modelCache[newID] = model
+					}
+					break
+				}
+			}
+		} else if e.Type == "modified" {
+			content := e.Content.(*ModifiedContent)
+			for _, f := range content.Fields {
+				if f.Name == "model_id" {
+					oldID := int64(f.OldValue.(float64))
+					newID := int64(f.NewValue.(float64))
+
+					if oldModel, ok := modelCache[oldID]; ok {
+						f.OldModel = oldModel
+					} else {
+						oldModel, err := ReadModel(ctx, oldID, false)
+						if err != nil {
+							return nil, &Error{Description: fmt.Sprintf("Could not read modified event oldModel for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}
+						}
+
+						f.OldModel = oldModel
+						modelCache[oldID] = oldModel
+					}
+
+					if newModel, ok := modelCache[newID]; ok {
+						f.NewModel = newModel
+					} else {
+						newModel, err := ReadModel(ctx, newID, false)
+						if err != nil {
+							return nil, &Error{Description: fmt.Sprintf("Could not read modified event newModel for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}
+						}
+
+						f.NewModel = newModel
+						modelCache[newID] = newModel
+					}
+
+					break
+				}
+			}
+		}
 	}
 
 	return events, nil
