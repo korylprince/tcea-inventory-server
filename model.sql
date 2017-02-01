@@ -27,7 +27,7 @@ CREATE TABLE device (
     status VARCHAR(50) NOT NULL,
     location VARCHAR(255) NOT NULL,
     FOREIGN KEY(model_id) REFERENCES model(id) ON DELETE CASCADE,
-    FOREIGN KEY(status) REFERENCES status(status) ON DELETE CASCADE,
+    FOREIGN KEY(status) REFERENCES status(status) ON DELETE CASCADE
 );
 
 CREATE INDEX device_serial_number ON device(serial_number);
