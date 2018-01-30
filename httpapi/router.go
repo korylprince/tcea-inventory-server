@@ -19,6 +19,7 @@ func NewRouter(w io.Writer, s SessionStore, db *sql.DB) http.Handler {
 	r := mux.NewRouter()
 
 	r.Path("/statuses/").Methods("GET").Handler(m(handleReadStatuses))
+	r.Path("/locations/").Methods("GET").Handler(m(handleReadLocations))
 
 	r.Path("/models/").Methods("POST").Handler(m(handleCreateModel))
 	r.Path("/models/").Methods("GET").Handler(m(handleQueryModel))

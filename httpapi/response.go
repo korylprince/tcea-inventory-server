@@ -22,3 +22,8 @@ type QueryDeviceResponse struct {
 type ReadStatusesResponse struct {
 	Statuses []api.Status `json:"statuses"`
 }
+
+//ReadLocationsResponse contains a list of allowed Locations
+type ReadLocationsResponse struct {
+	Locations []api.Location `json:"locations"`
+}
