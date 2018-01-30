@@ -201,7 +201,7 @@ func ReadEvents(ctx context.Context, id int64, el EventLocation) ([]*Event, erro
 					if model, ok := modelCache[newID]; ok {
 						f.Model = model
 					} else {
-						model, err := ReadModel(ctx, newID, false)
+						model, err := ReadModel(ctx, newID)
 						if err != nil {
 							return nil, &Error{Description: fmt.Sprintf("Could not read created event model for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}
 						}
@@ -222,7 +222,7 @@ func ReadEvents(ctx context.Context, id int64, el EventLocation) ([]*Event, erro
 					if oldModel, ok := modelCache[oldID]; ok {
 						f.OldModel = oldModel
 					} else {
-						oldModel, err := ReadModel(ctx, oldID, false)
+						oldModel, err := ReadModel(ctx, oldID)
 						if err != nil {
 							return nil, &Error{Description: fmt.Sprintf("Could not read modified event oldModel for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}
 						}
@@ -234,7 +234,7 @@ func ReadEvents(ctx context.Context, id int64, el EventLocation) ([]*Event, erro
 					if newModel, ok := modelCache[newID]; ok {
 						f.NewModel = newModel
 					} else {
-						newModel, err := ReadModel(ctx, newID, false)
+						newModel, err := ReadModel(ctx, newID)
 						if err != nil {
 							return nil, &Error{Description: fmt.Sprintf("Could not read modified event newModel for %s(%d)", el.Type, id), Type: ErrorTypeServer, Err: err}
 						}

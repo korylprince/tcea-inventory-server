@@ -2,12 +2,6 @@ package httpapi
 
 import "github.com/korylprince/tcea-inventory-server/api"
 
-//CreateModelRequest is a Model Create and Note Create request combined
-type CreateModelRequest struct {
-	Model *api.Model `json:"model"`
-	Note  string     `json:"note"`
-}
-
 //CreateDeviceRequest is a Device Create and Note Create request combined
 type CreateDeviceRequest struct {
 	Device *api.Device `json:"device"`

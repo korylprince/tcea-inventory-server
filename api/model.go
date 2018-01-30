@@ -9,19 +9,11 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
-//ModelEventLocation is the EventLocation for the Model type
-var ModelEventLocation = EventLocation{
-	Type:    "Model",
-	Table:   "model_log",
-	IDField: "model_id",
-}
-
 //Model represents a device model
 type Model struct {
-	ID           int64    `json:"id"`
-	Manufacturer string   `json:"manufacturer"`
-	Model        string   `json:"model"`
-	Events       []*Event `json:"events,omitempty"`
+	ID           int64  `json:"id"`
+	Manufacturer string `json:"manufacturer"`
+	Model        string `json:"model"`
 }
 
 //Validate cleans and validates the given Model
@@ -32,10 +24,8 @@ func (m *Model) Validate() error {
 	if err := ValidateString("manufacturer", m.Manufacturer, 255); err != nil {
 		return err
 	}
-	if err := ValidateString("model", m.Model, 255); err != nil {
-		return err
-	}
-	return nil
+
+	return ValidateString("model", m.Model, 255)
 }
 
 //CreateModel creates a new Model with the given fields (ID and Events are ignored and created) and returns its ID, or an error if one occurred
@@ -52,7 +42,7 @@ func CreateModel(ctx context.Context, model *Model) (id int64, err error) {
 	)
 	if err != nil {
 		if e, ok := err.(*mysql.MySQLError); ok && e.Number == 1062 {
-			dup, newErr := ReadModelByManufacturerAndModel(ctx, model.Manufacturer, model.Model, false)
+			dup, newErr := ReadModelByManufacturerAndModel(ctx, model.Manufacturer, model.Model)
 			if newErr != nil {
 				return 0, newErr
 			}
@@ -66,21 +56,11 @@ func CreateModel(ctx context.Context, model *Model) (id int64, err error) {
 		return 0, &Error{Description: "Could not fetch Model id", Type: ErrorTypeServer, Err: err}
 	}
 
-	c := &CreatedContent{Fields: []*CreatedField{
-		&CreatedField{Name: "manufacturer", Value: model.Manufacturer},
-		&CreatedField{Name: "model", Value: model.Model},
-	}}
-
-	if _, err := CreateCreatedEvent(ctx, id, ModelEventLocation, c); err != nil {
-		return 0, &Error{Description: "Could not add Created Event", Type: ErrorTypeServer, Err: err}
-	}
-
 	return id, nil
 }
 
 //ReadModel returns the Model with the given id, or an error if one occurred.
-//If includeEvents is true the Events field will be populated
-func ReadModel(ctx context.Context, id int64, includeEvents bool) (*Model, error) {
+func ReadModel(ctx context.Context, id int64) (*Model, error) {
 	tx := ctx.Value(TransactionKey).(*sql.Tx)
 
 	model := &Model{ID: id}
@@ -95,22 +75,11 @@ func ReadModel(ctx context.Context, id int64, includeEvents bool) (*Model, error
 		return nil, &Error{Description: fmt.Sprintf("Could not query Model(%d)", id), Type: ErrorTypeServer, Err: err}
 	}
 
-	if includeEvents {
-
-		events, err := ReadEvents(ctx, id, ModelEventLocation)
-		if err != nil {
-			return nil, err
-		}
-
-		model.Events = events
-	}
-
 	return model, nil
 }
 
 //ReadModelByManufacturerAndModel returns the Model with the given Manufacturer and Model, or an error if one occurred.
-//If includeEvents is true the Events field will be populated
-func ReadModelByManufacturerAndModel(ctx context.Context, manufacturer, model string, includeEvents bool) (*Model, error) {
+func ReadModelByManufacturerAndModel(ctx context.Context, manufacturer, model string) (*Model, error) {
 	tx := ctx.Value(TransactionKey).(*sql.Tx)
 
 	newModel := &Model{Manufacturer: manufacturer, Model: model}
@@ -125,16 +94,6 @@ func ReadModelByManufacturerAndModel(ctx context.Context, manufacturer, model st
 		return nil, &Error{Description: fmt.Sprintf("Could not query ModelByManufacturerAndModel(%s %s)", manufacturer, model), Type: ErrorTypeServer, Err: err}
 	}
 
-	if includeEvents {
-
-		events, err := ReadEvents(ctx, newModel.ID, ModelEventLocation)
-		if err != nil {
-			return nil, err
-		}
-
-		newModel.Events = events
-	}
-
 	return newModel, nil
 }
 
@@ -146,39 +105,20 @@ func UpdateModel(ctx context.Context, model *Model) error {
 		return &Error{Description: "Could not validate Model", Type: ErrorTypeUser, Err: err}
 	}
 
-	oldModel, err := ReadModel(ctx, model.ID, false)
-	if err != nil {
-		return &Error{Description: fmt.Sprintf("Could not read old Model(%d)", model.ID), Type: ErrorTypeServer, Err: err}
-	}
-
-	_, err = tx.Exec("UPDATE model SET manufacturer=?, model=? WHERE id=?;",
+	_, err := tx.Exec("UPDATE model SET manufacturer=?, model=? WHERE id=?;",
 		model.Manufacturer,
 		model.Model,
 		model.ID,
 	)
 	if err != nil {
 		if e, ok := err.(*mysql.MySQLError); ok && e.Number == 1062 {
-			dup, newErr := ReadModelByManufacturerAndModel(ctx, model.Manufacturer, model.Model, false)
+			dup, newErr := ReadModelByManufacturerAndModel(ctx, model.Manufacturer, model.Model)
 			if newErr != nil {
 				return newErr
 			}
 			return &Error{Description: fmt.Sprintf("Could not update Model(%d)", model.ID), Type: ErrorTypeDuplicate, Err: err, DuplicateID: dup.ID}
 		}
 		return &Error{Description: fmt.Sprintf("Could not update Model(%d)", model.ID), Type: ErrorTypeServer, Err: err}
-	}
-
-	c := &ModifiedContent{Fields: []*ModifiedField{}}
-
-	if oldModel.Manufacturer != model.Manufacturer {
-		c.Fields = append(c.Fields, &ModifiedField{Name: "manufacturer", OldValue: oldModel.Manufacturer, NewValue: model.Manufacturer})
-	}
-
-	if oldModel.Model != model.Model {
-		c.Fields = append(c.Fields, &ModifiedField{Name: "model", OldValue: oldModel.Model, NewValue: model.Model})
-	}
-	_, err = CreateModifiedEvent(ctx, model.ID, ModelEventLocation, c)
-	if err != nil {
-		return &Error{Description: fmt.Sprintf("Could not created Modified Event for Model(%d)", model.ID), Type: ErrorTypeServer, Err: err}
 	}
 
 	return nil

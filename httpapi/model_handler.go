@@ -13,27 +13,20 @@ import (
 
 //POST /models
 func handleCreateModel(w http.ResponseWriter, r *http.Request) *handlerResponse {
-	var req *CreateModelRequest
+	var model *api.Model
 	d := json.NewDecoder(r.Body)
 
-	err := d.Decode(&req)
-	if err != nil || req == nil || req.Model == nil {
+	err := d.Decode(model)
+	if model == nil {
 		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
 	}
 
-	id, err := api.CreateModel(r.Context(), req.Model)
+	id, err := api.CreateModel(r.Context(), model)
 	if resp := checkAPIError(err); resp != nil {
 		return resp
 	}
 
-	if req.Note != "" {
-		_, err = api.CreateNoteEvent(r.Context(), id, api.ModelEventLocation, req.Note)
-		if resp := checkAPIError(err); resp != nil {
-			return resp
-		}
-	}
-
-	model, err := api.ReadModel(r.Context(), id, true)
+	model, err = api.ReadModel(r.Context(), id)
 	if resp := checkAPIError(err); resp != nil {
 		return resp
 	}
@@ -51,12 +44,7 @@ func handleReadModel(w http.ResponseWriter, r *http.Request) *handlerResponse {
 		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
 	}
 
-	includeEvents := false
-	if v := r.URL.Query().Get("events"); v == eventsTrue {
-		includeEvents = true
-	}
-
-	model, err := api.ReadModel(r.Context(), id, includeEvents)
+	model, err := api.ReadModel(r.Context(), id)
 	if resp := checkAPIError(err); resp != nil {
 		return resp
 	}
@@ -91,7 +79,7 @@ func handleUpdateModel(w http.ResponseWriter, r *http.Request) *handlerResponse 
 		return resp
 	}
 
-	model, err = api.ReadModel(r.Context(), model.ID, true)
+	model, err = api.ReadModel(r.Context(), model.ID)
 	if resp := checkAPIError(err); resp != nil {
 		return resp
 	}
@@ -100,38 +88,6 @@ func handleUpdateModel(w http.ResponseWriter, r *http.Request) *handlerResponse 
 	}
 
 	return &handlerResponse{Code: http.StatusOK, Body: model}
-}
-
-//POST /models/:id/notes
-func handleCreateModelNoteEvent(w http.ResponseWriter, r *http.Request) *handlerResponse {
-	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
-	if err != nil {
-		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
-	}
-
-	var note *NoteRequest
-	d := json.NewDecoder(r.Body)
-
-	err = d.Decode(&note)
-	if err != nil || note == nil {
-		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
-	}
-
-	_, err = api.CreateNoteEvent(r.Context(), id, api.ModelEventLocation, note.Note)
-	if resp := checkAPIError(err); resp != nil {
-		return resp
-	}
-
-	model, err := api.ReadModel(r.Context(), id, true)
-	if resp := checkAPIError(err); resp != nil {
-		return resp
-	}
-	if model == nil {
-		return handleError(http.StatusNotFound, errors.New("Could not find model, but just updated"))
-	}
-
-	return &handlerResponse{Code: http.StatusOK, Body: model}
-
 }
 
 //GET /models/

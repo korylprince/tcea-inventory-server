@@ -28,9 +28,8 @@ type Device struct {
 }
 
 //ReadModel resolves the ModelID field to a Model.
-//If includeEvents is true the Events field will be populated
-func (d *Device) ReadModel(ctx context.Context, includeEvents bool) (*Model, error) {
-	return ReadModel(ctx, d.ModelID, includeEvents)
+func (d *Device) ReadModel(ctx context.Context) (*Model, error) {
+	return ReadModel(ctx, d.ModelID)
 }
 
 //Validate cleans and validates the given Device
@@ -71,7 +70,7 @@ func (d *Device) Validate(ctx context.Context) error {
 		return fmt.Errorf("location (%s) must be a valid location", d.Location)
 	}
 
-	if model, err := d.ReadModel(ctx, false); model == nil || err != nil {
+	if model, err := d.ReadModel(ctx); model == nil || err != nil {
 		return fmt.Errorf("model (%d) must be a valid model", d.ModelID)
 	}
 
