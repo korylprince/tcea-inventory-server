@@ -30,10 +30,7 @@ func (u *User) Validate() error {
 		}
 		return fmt.Errorf("email (%s) must be a valid email", u.Email)
 	}
-	if err := ValidateString("name", u.Name, 255); err != nil {
-		return err
-	}
-	return nil
+	return ValidateString("name", u.Name, 255)
 }
 
 //Authenticate authenticates against the database with the given credentials and returns nil if success or error on failure
