@@ -22,7 +22,7 @@ type Device struct {
 	SerialNumber string   `json:"serial_number"`
 	ModelID      int64    `json:"model_id,omitempty"`
 	Status       Status   `json:"status"`
-	Location     string   `json:"location"`
+	Location     Location `json:"location"`
 	Model        *Model   `json:"model,omitempty"`
 	Events       []*Event `json:"events,omitempty"`
 }
@@ -37,7 +37,7 @@ func (d *Device) ReadModel(ctx context.Context, includeEvents bool) (*Model, err
 func (d *Device) Validate(ctx context.Context) error {
 	d.SerialNumber = strings.TrimSpace(d.SerialNumber)
 	d.Status = Status(strings.TrimSpace(string(d.Status)))
-	d.Location = strings.TrimSpace(d.Location)
+	d.Location = Location(strings.TrimSpace(string(d.Location)))
 
 	if err := ValidateString("serial_number", d.SerialNumber, 255); err != nil {
 		return err
@@ -57,8 +57,18 @@ func (d *Device) Validate(ctx context.Context) error {
 		return fmt.Errorf("status (%s) must be a valid status", d.Status)
 	}
 
-	if err := ValidateString("location", d.Location, 255); err != nil {
+	locations, err := ReadLocations(ctx)
+	if err != nil {
 		return err
+	}
+	ok = false
+	for _, location := range locations {
+		if d.Location == location {
+			ok = true
+		}
+	}
+	if !ok {
+		return fmt.Errorf("location (%s) must be a valid location", d.Location)
 	}
 
 	if model, err := d.ReadModel(ctx, false); model == nil || err != nil {
