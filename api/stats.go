@@ -27,11 +27,13 @@ type StatsStatus struct {
 
 //Stats represents device statistics (top 10, etc)
 type Stats struct {
-	Locations   []*StatsLocation `json:"locations"`
-	Models      []*StatsModel    `json:"models"`
-	Statuses    []*StatsStatus   `json:"statuses"`
-	DeviceCount int              `json:"device_count"`
-	Devices     []*Device        `json:"devices"`
+	Locations     []*StatsLocation `json:"locations"`
+	Models        []*StatsModel    `json:"models"`
+	Statuses      []*StatsStatus   `json:"statuses"`
+	DeviceCount   int              `json:"device_count"`
+	ModelCount    int              `json:"model_count"`
+	LocationCount int              `json:"location_count"`
+	Devices       []*Device        `json:"devices"`
 }
 
 //ReadStats returns Stats, or an error if one occurred.
@@ -49,6 +51,28 @@ func ReadStats(ctx context.Context) (*Stats, error) {
 		return nil, &Error{Description: "Could not query Stats.DeviceCount: ErrNoRows", Type: ErrorTypeServer, Err: err}
 	case err != nil:
 		return nil, &Error{Description: "Could not query Stats.DeviceCount", Type: ErrorTypeServer, Err: err}
+	}
+
+	//ModelCount
+	row = tx.QueryRow("SELECT COUNT(id) FROM model;")
+	err = row.Scan(&(s.ModelCount))
+
+	switch {
+	case err == sql.ErrNoRows:
+		return nil, &Error{Description: "Could not query Stats.ModelCount: ErrNoRows", Type: ErrorTypeServer, Err: err}
+	case err != nil:
+		return nil, &Error{Description: "Could not query Stats.ModelCount", Type: ErrorTypeServer, Err: err}
+	}
+
+	//LocationCount
+	row = tx.QueryRow("SELECT COUNT(location) FROM location;")
+	err = row.Scan(&(s.LocationCount))
+
+	switch {
+	case err == sql.ErrNoRows:
+		return nil, &Error{Description: "Could not query Stats.LocationCount: ErrNoRows", Type: ErrorTypeServer, Err: err}
+	case err != nil:
+		return nil, &Error{Description: "Could not query Stats.LocationCount", Type: ErrorTypeServer, Err: err}
 	}
 
 	//Locations
