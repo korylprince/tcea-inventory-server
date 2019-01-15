@@ -1,3 +1,4 @@
 *.swp
 tcea-inventory-server
 env
+run.py
