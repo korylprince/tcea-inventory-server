@@ -16,7 +16,7 @@ func handleCreateModel(w http.ResponseWriter, r *http.Request) *handlerResponse 
 	var model *api.Model
 	d := json.NewDecoder(r.Body)
 
-	err := d.Decode(model)
+	err := d.Decode(&model)
 	if model == nil {
 		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode JSON: %v", err))
 	}
