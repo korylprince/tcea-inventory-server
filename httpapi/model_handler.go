@@ -11,8 +11,8 @@ import (
 	"github.com/korylprince/tcea-inventory-server/api"
 )
 
-//POST /models
-func handleCreateModel(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// POST /models
+func handleCreateModel(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 	var model *api.Model
 	d := json.NewDecoder(r.Body)
 
@@ -37,8 +37,8 @@ func handleCreateModel(w http.ResponseWriter, r *http.Request) *handlerResponse 
 	return &handlerResponse{Code: http.StatusOK, Body: model}
 }
 
-//GET /models/:id
-func handleReadModel(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// GET /models/:id
+func handleReadModel(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
@@ -55,8 +55,8 @@ func handleReadModel(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	return &handlerResponse{Code: http.StatusOK, Body: model}
 }
 
-//POST /models/:id
-func handleUpdateModel(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// POST /models/:id
+func handleUpdateModel(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
@@ -90,8 +90,8 @@ func handleUpdateModel(w http.ResponseWriter, r *http.Request) *handlerResponse 
 	return &handlerResponse{Code: http.StatusOK, Body: model}
 }
 
-//GET /models/
-func handleQueryModel(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// GET /models/
+func handleQueryModel(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 	models, err := api.QueryModel(r.Context(),
 		r.URL.Query().Get("manufacturer"),
 		r.URL.Query().Get("model"),

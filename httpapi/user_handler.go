@@ -11,8 +11,8 @@ import (
 	"github.com/korylprince/tcea-inventory-server/api"
 )
 
-//POST /users
-func handleCreateUserWithCredentials(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// POST /users
+func handleCreateUserWithCredentials(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 	var req *CreateUserRequest
 	d := json.NewDecoder(r.Body)
 
@@ -38,8 +38,8 @@ func handleCreateUserWithCredentials(w http.ResponseWriter, r *http.Request) *ha
 	return &handlerResponse{Code: http.StatusOK, Body: user}
 }
 
-//GET /users/:id
-func handleReadUser(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// GET /users/:id
+func handleReadUser(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
@@ -56,8 +56,8 @@ func handleReadUser(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	return &handlerResponse{Code: http.StatusOK, Body: user}
 }
 
-//POST /users/:id
-func handleUpdateUser(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// POST /users/:id
+func handleUpdateUser(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
@@ -100,8 +100,8 @@ func handleUpdateUser(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	return &handlerResponse{Code: http.StatusOK, Body: user}
 }
 
-//POST /users/:id/password
-func handleChangeUserPassword(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// POST /users/:id/password
+func handleChangeUserPassword(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
@@ -137,9 +137,9 @@ func handleChangeUserPassword(w http.ResponseWriter, r *http.Request) *handlerRe
 	return &handlerResponse{Code: http.StatusOK, Body: user}
 }
 
-//POST /auth
+// POST /auth
 func handleAuthenticate(s SessionStore) returnHandler {
-	return func(w http.ResponseWriter, r *http.Request) *handlerResponse {
+	return func(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 		var req *AuthenticateRequest
 		d := json.NewDecoder(r.Body)
 

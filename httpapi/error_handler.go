@@ -7,24 +7,24 @@ import (
 	"github.com/korylprince/tcea-inventory-server/api"
 )
 
-//ErrorResponse represents an HTTP error. If the error is 409 Conflict, the DuplicateID field will be populated.
+// ErrorResponse represents an HTTP error. If the error is 409 Conflict, the DuplicateID field will be populated.
 type ErrorResponse struct {
 	Code        int    `json:"code"`
 	Error       string `json:"error"`
 	DuplicateID int64  `json:"duplicate_id,omitempty"`
 }
 
-//handleError returns a handlerResponse response for the given code
+// handleError returns a handlerResponse response for the given code
 func handleError(code int, err error) *handlerResponse {
 	return &handlerResponse{Code: code, Body: &ErrorResponse{Code: code, Error: http.StatusText(code)}, Err: err}
 }
 
-//notFoundHandler returns a 401 handlerResponse
-func notFoundHandler(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// notFoundHandler returns a 401 handlerResponse
+func notFoundHandler(_ http.ResponseWriter, _ *http.Request) *handlerResponse {
 	return handleError(http.StatusNotFound, errors.New("Could not find handler"))
 }
 
-//checkAPIError checks an api.Error and returns a handlerResponse for it, or nil if there was no error
+// checkAPIError checks an api.Error and returns a handlerResponse for it, or nil if there was no error
 func checkAPIError(err error) *handlerResponse {
 	if err == nil {
 		return nil

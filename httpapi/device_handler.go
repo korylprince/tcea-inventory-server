@@ -11,8 +11,8 @@ import (
 	"github.com/korylprince/tcea-inventory-server/api"
 )
 
-//POST /devices
-func handleCreateDevice(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// POST /devices
+func handleCreateDevice(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 	var req *CreateDeviceRequest
 	d := json.NewDecoder(r.Body)
 
@@ -44,8 +44,8 @@ func handleCreateDevice(w http.ResponseWriter, r *http.Request) *handlerResponse
 	return &handlerResponse{Code: http.StatusOK, Body: device}
 }
 
-//GET /devices/:id
-func handleReadDevice(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// GET /devices/:id
+func handleReadDevice(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
@@ -67,8 +67,8 @@ func handleReadDevice(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	return &handlerResponse{Code: http.StatusOK, Body: device}
 }
 
-//POST /devices/:id
-func handleUpdateDevice(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// POST /devices/:id
+func handleUpdateDevice(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
@@ -102,8 +102,8 @@ func handleUpdateDevice(w http.ResponseWriter, r *http.Request) *handlerResponse
 	return &handlerResponse{Code: http.StatusOK, Body: device}
 }
 
-//POST /devices/:id/notes/
-func handleCreateDeviceNoteEvent(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// POST /devices/:id/notes/
+func handleCreateDeviceNoteEvent(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
 	if err != nil {
 		return handleError(http.StatusBadRequest, fmt.Errorf("Could not decode id: %v", err))
@@ -133,7 +133,7 @@ func handleCreateDeviceNoteEvent(w http.ResponseWriter, r *http.Request) *handle
 	return &handlerResponse{Code: http.StatusOK, Body: device}
 }
 
-//GET /devices/
+// GET /devices/
 func handleQueryDevice(w http.ResponseWriter, r *http.Request) *handlerResponse {
 	if r.URL.Query().Get("search") != "" {
 		return handleSimpleQueryDevice(w, r)
@@ -153,8 +153,8 @@ func handleQueryDevice(w http.ResponseWriter, r *http.Request) *handlerResponse 
 	return &handlerResponse{Code: http.StatusOK, Body: &QueryDeviceResponse{Devices: devices}}
 }
 
-//GET /devices/
-func handleSimpleQueryDevice(w http.ResponseWriter, r *http.Request) *handlerResponse {
+// GET /devices/
+func handleSimpleQueryDevice(_ http.ResponseWriter, r *http.Request) *handlerResponse {
 	devices, err := api.SimpleQueryDevice(r.Context(), r.URL.Query().Get("search"))
 	if resp := checkAPIError(err); resp != nil {
 		return resp
