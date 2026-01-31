@@ -34,6 +34,24 @@ type Message struct {
 	Name       string     `json:"name,omitempty"`         // tool name (in tool responses)
 }
 
+// MarshalJSON customizes JSON marshaling to send null for empty content strings
+// This is required because the API treats empty string content as "prefill" which
+// is incompatible with thinking mode
+func (m Message) MarshalJSON() ([]byte, error) {
+	type Alias Message
+	aux := struct {
+		Alias
+		Content *string `json:"content"`
+	}{
+		Alias: Alias(m),
+	}
+	// Convert empty string to nil
+	if m.Content != nil && *m.Content != "" {
+		aux.Content = m.Content
+	}
+	return json.Marshal(aux)
+}
+
 // ToolCall represents a tool call request from the assistant
 type ToolCall struct {
 	ID       string       `json:"id"`

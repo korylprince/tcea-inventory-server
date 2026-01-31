@@ -99,7 +99,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	content := clientMsg.Message
 	newMessages = append(newMessages, Message{Role: "user", Content: &content})
 
-	// Tool call loop
+	// Tool call loop - use non-streaming to get complete tool_calls
 	for {
 		resp, err := h.client.Chat(ctx, messages, tools)
 		if err != nil {
@@ -115,14 +115,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		choice := resp.Choices[0]
 		assistantMsg := choice.Message
 
-		// Add assistant message to history
-		messages = append(messages, assistantMsg)
-		newMessages = append(newMessages, assistantMsg)
-
 		// Check if we have tool calls
 		if len(assistantMsg.ToolCalls) == 0 {
-			break // No more tool calls, proceed to final response
+			// No tool calls - this is the final response
+			// Send it to the client (non-streamed, but we'll send it as text chunks for consistency)
+			if assistantMsg.Content != nil && *assistantMsg.Content != "" {
+				if err := conn.WriteJSON(ServerMessage{
+					Type:    MessageTypeText,
+					Content: *assistantMsg.Content,
+				}); err != nil {
+					log.Printf("Failed to write response: %v", err)
+					return
+				}
+				newMessages = append(newMessages, assistantMsg)
+			}
+			break
 		}
+
+		// Add assistant message with tool calls to history
+		messages = append(messages, assistantMsg)
+		newMessages = append(newMessages, assistantMsg)
 
 		// Execute all tool calls in parallel
 		toolResults := h.executeToolsParallel(ctx, assistantMsg.ToolCalls)
@@ -138,36 +150,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			messages = append(messages, toolMsg)
 			newMessages = append(newMessages, toolMsg)
 		}
-	}
-
-	// Stream final response (without tools)
-	streamCh, err := h.client.ChatStream(ctx, messages)
-	if err != nil {
-		h.sendError(conn, "Streaming failed: "+err.Error())
-		return
-	}
-
-	var fullResponse string
-	for chunk := range streamCh {
-		if chunk.Err != nil {
-			h.sendError(conn, "Stream error: "+chunk.Err.Error())
-			return
-		}
-		if chunk.Content != "" {
-			fullResponse += chunk.Content
-			if err := conn.WriteJSON(ServerMessage{
-				Type:    MessageTypeText,
-				Content: chunk.Content,
-			}); err != nil {
-				log.Printf("Failed to write chunk: %v", err)
-				return
-			}
-		}
-	}
-
-	// Add final assistant response to messages
-	if fullResponse != "" {
-		newMessages = append(newMessages, Message{Role: "assistant", Content: &fullResponse})
 	}
 
 	// Commit transaction
