@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
-	"sync"
 
 	"github.com/gorilla/websocket"
 	"github.com/korylprince/tcea-inventory-server/api"
@@ -159,8 +158,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		// Execute tool calls in parallel
-		toolResults := h.executeToolsParallel(ctx, toolCalls)
+		// Execute tool calls sequentially (parallel execution causes MySQL connection issues)
+		toolResults := h.executeToolsSequential(ctx, toolCalls)
 
 		// Add tool results to messages
 		for _, tr := range toolResults {
@@ -199,27 +198,21 @@ type toolResult struct {
 	content string
 }
 
-func (h *Handler) executeToolsParallel(ctx context.Context, calls []ToolCall) []toolResult {
+func (h *Handler) executeToolsSequential(ctx context.Context, calls []ToolCall) []toolResult {
 	results := make([]toolResult, len(calls))
-	var wg sync.WaitGroup
 
 	for i, call := range calls {
-		wg.Add(1)
-		go func(idx int, tc ToolCall) {
-			defer wg.Done()
-			content, err := h.executor.Execute(ctx, tc.Function.Name, tc.Function.Arguments)
-			if err != nil {
-				content = `{"error": "` + err.Error() + `"}`
-			}
-			results[idx] = toolResult{
-				id:      tc.ID,
-				name:    tc.Function.Name,
-				content: content,
-			}
-		}(i, call)
+		content, err := h.executor.Execute(ctx, call.Function.Name, call.Function.Arguments)
+		if err != nil {
+			content = `{"error": "` + err.Error() + `"}`
+		}
+		results[i] = toolResult{
+			id:      call.ID,
+			name:    call.Function.Name,
+			content: content,
+		}
 	}
 
-	wg.Wait()
 	return results
 }
 
