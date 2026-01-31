@@ -20,7 +20,13 @@ func main() {
 
 	s := httpapi.NewMemorySessionStore(time.Minute * time.Duration(config.SessionExpiration))
 
-	r := httpapi.NewRouter(os.Stdout, s, db)
+	chatCfg := &httpapi.ChatConfig{
+		AIEndpoint:    config.AIEndpoint,
+		AIModel:       config.AIModel,
+		CacheMaxBytes: config.ConversationCacheMaxBytes,
+	}
+
+	r := httpapi.NewRouter(os.Stdout, s, db, chatCfg)
 
 	chain := handlers.CompressHandler(handlers.CORS(
 		handlers.AllowedOrigins([]string{"*"}),

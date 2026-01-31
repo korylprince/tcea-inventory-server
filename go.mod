@@ -10,4 +10,7 @@ require (
 	golang.org/x/crypto v0.7.0
 )
 
-require github.com/felixge/httpsnoop v1.0.3 // indirect
+require (
+	github.com/felixge/httpsnoop v1.0.3 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
+)

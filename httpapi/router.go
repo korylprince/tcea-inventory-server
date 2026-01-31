@@ -6,10 +6,18 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/korylprince/tcea-inventory-server/chatbot"
 )
 
+// ChatConfig holds configuration for the chat handler
+type ChatConfig struct {
+	AIEndpoint    string
+	AIModel       string
+	CacheMaxBytes int
+}
+
 //NewRouter returns an HTTP router for the HTTP API
-func NewRouter(w io.Writer, s SessionStore, db *sql.DB) http.Handler {
+func NewRouter(w io.Writer, s SessionStore, db *sql.DB, chatCfg *ChatConfig) http.Handler {
 
 	//construct middleware
 	var m = func(h returnHandler) http.Handler {
@@ -40,6 +48,14 @@ func NewRouter(w io.Writer, s SessionStore, db *sql.DB) http.Handler {
 	r.Path("/stats/").Methods("GET").Handler(m(handleReadStats))
 
 	r.Path("/auth").Methods("POST").Handler(logMiddleware(jsonMiddleware(txMiddleware(handleAuthenticate(s), db)), w))
+
+	// Chat WebSocket endpoint (auth via header, no JSON middleware)
+	if chatCfg != nil {
+		store := chatbot.NewLRUStore(chatCfg.CacheMaxBytes)
+		client := chatbot.NewAIClient(chatCfg.AIEndpoint, chatCfg.AIModel)
+		chatHandler := chatbot.NewHandler(store, client, db)
+		r.Path("/chat").Handler(wsAuthMiddleware(chatHandler, s, db, w))
+	}
 
 	r.NotFoundHandler = m(notFoundHandler)
 

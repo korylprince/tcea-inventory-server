@@ -136,3 +136,53 @@ func txMiddleware(next returnHandler, db *sql.DB) returnHandler {
 		return resp
 	}
 }
+
+// wsAuthMiddleware is a WebSocket-compatible auth middleware
+func wsAuthMiddleware(next http.Handler, s SessionStore, db *sql.DB, writer io.Writer) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("X-Session-Key")
+		if key == "" {
+			http.Error(w, "X-Session-Key header required", http.StatusUnauthorized)
+			logWSAuth(writer, r, http.StatusUnauthorized, nil, errors.New("X-Session-Key header empty"))
+			return
+		}
+
+		sess, err := s.Check(key)
+		if err != nil {
+			http.Error(w, "Session check failed", http.StatusInternalServerError)
+			logWSAuth(writer, r, http.StatusInternalServerError, nil, err)
+			return
+		}
+		if sess == nil {
+			http.Error(w, "Invalid session", http.StatusUnauthorized)
+			logWSAuth(writer, r, http.StatusUnauthorized, nil, errors.New("Could not find session"))
+			return
+		}
+
+		// Read user directly from database
+		user := &api.User{ID: sess.UserID}
+		row := db.QueryRow("SELECT email, name FROM user WHERE id=?", sess.UserID)
+		if err := row.Scan(&user.Email, &user.Name); err != nil {
+			http.Error(w, "User lookup failed", http.StatusInternalServerError)
+			logWSAuth(writer, r, http.StatusInternalServerError, nil, err)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), api.UserKey, user)
+		logWSAuth(writer, r, http.StatusSwitchingProtocols, user, nil)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func logWSAuth(writer io.Writer, r *http.Request, code int, user *api.User, err error) {
+	template.Must(template.New("log").Parse(logTemplate)).Execute(writer, &logData{
+		Date:   time.Now().Format("2006-01-02:15:04:05 -0700"),
+		User:   user,
+		Status: http.StatusText(code),
+		Code:   code,
+		Method: r.Method,
+		Path:   r.URL.Path,
+		Query:  r.URL.RawQuery,
+		Err:    err,
+	})
+}

@@ -7,7 +7,7 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
-//Config represents options given in the environment
+// Config represents options given in the environment
 type Config struct {
 	SessionExpiration int //in minutes; default: 60
 
@@ -16,6 +16,10 @@ type Config struct {
 
 	ListenAddr string //addr format used for net.Dial; required
 	Prefix     string //url prefix to mount api to without trailing slash
+
+	AIEndpoint                string //AI backend URL; required
+	AIModel                   string //AI model name; required
+	ConversationCacheMaxBytes int    //Max size of conversation LRU cache in bytes; default: 10485760 (10MB)
 }
 
 var config = &Config{}
@@ -34,6 +38,18 @@ func init() {
 
 	if config.SessionExpiration == 0 {
 		config.SessionExpiration = 60
+	}
+
+	if config.AIEndpoint == "" {
+		log.Fatalln("INVENTORY_AIENDPOINT must be configured")
+	}
+
+	if config.AIModel == "" {
+		log.Fatalln("INVENTORY_AIMODEL must be configured")
+	}
+
+	if config.ConversationCacheMaxBytes == 0 {
+		config.ConversationCacheMaxBytes = 10485760 // 10MB
 	}
 
 	checkEmpty(config.SQLDriver, "SQLDRIVER")
