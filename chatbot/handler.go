@@ -158,6 +158,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
+		// Send message_end to indicate this logical message is complete (more coming after tool execution)
+		if fullContent != "" {
+			conn.WriteJSON(ServerMessage{Type: MessageTypeMessageEnd})
+		}
+
 		// Execute tool calls sequentially (parallel execution causes MySQL connection issues)
 		toolResults := h.executeToolsSequential(ctx, toolCalls)
 

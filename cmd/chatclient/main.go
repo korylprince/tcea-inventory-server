@@ -122,6 +122,8 @@ func main() {
 			case "text":
 				fmt.Print(msg.Content)
 				os.Stdout.Sync() // Force flush for real-time streaming
+			case "message_end":
+				fmt.Println() // New line between logical messages
 			case "done":
 				fmt.Println()
 				currentConvID = msg.ConversationID

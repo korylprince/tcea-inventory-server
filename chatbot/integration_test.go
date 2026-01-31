@@ -298,6 +298,11 @@ func (h *TestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
+		// Send message_end to indicate this logical message is complete (more coming after tool execution)
+		if fullContent != "" {
+			conn.WriteJSON(chatbot.ServerMessage{Type: chatbot.MessageTypeMessageEnd})
+		}
+
 		// Execute tool calls using mock executor
 		for _, tc := range toolCalls {
 			result, err := h.executor.Execute(r.Context(), tc.Function.Name, tc.Function.Arguments)
@@ -441,6 +446,7 @@ func TestToolCallExecution(t *testing.T) {
 
 	var fullResponse string
 	var doneReceived bool
+	var messageCount int
 
 	for {
 		var msg chatbot.ServerMessage
@@ -454,6 +460,9 @@ func TestToolCallExecution(t *testing.T) {
 		switch msg.Type {
 		case chatbot.MessageTypeText:
 			fullResponse += msg.Content
+		case chatbot.MessageTypeMessageEnd:
+			messageCount++
+			t.Logf("--- Message %d complete (tool calls being executed) ---", messageCount)
 		case chatbot.MessageTypeDone:
 			doneReceived = true
 		case chatbot.MessageTypeError:
@@ -465,7 +474,7 @@ func TestToolCallExecution(t *testing.T) {
 		}
 	}
 
-	t.Logf("Full response: %s", fullResponse)
+	t.Logf("Full response (%d intermediate messages): %s", messageCount, fullResponse)
 
 	// The response should mention something about devices
 	if !strings.Contains(strings.ToLower(fullResponse), "device") &&
@@ -574,6 +583,7 @@ func TestStatsQuery(t *testing.T) {
 	conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 
 	var fullResponse string
+	var messageCount int
 	for {
 		var msg chatbot.ServerMessage
 		if err := conn.ReadJSON(&msg); err != nil {
@@ -585,8 +595,11 @@ func TestStatsQuery(t *testing.T) {
 		switch msg.Type {
 		case chatbot.MessageTypeText:
 			fullResponse += msg.Content
+		case chatbot.MessageTypeMessageEnd:
+			messageCount++
+			t.Logf("--- Message %d complete ---", messageCount)
 		case chatbot.MessageTypeDone:
-			t.Logf("Stats response: %s", truncate(fullResponse, 500))
+			t.Logf("Stats response (%d messages): %s", messageCount+1, truncate(fullResponse, 500))
 			return
 		case chatbot.MessageTypeError:
 			t.Fatalf("Error: %s", msg.Error)

@@ -7,7 +7,7 @@ type ClientMessage struct {
 
 // ServerMessage is the message format from server to client
 type ServerMessage struct {
-	Type           string `json:"type"`                      // "text", "done", or "error"
+	Type           string `json:"type"`                      // "text", "message_end", "done", or "error"
 	Content        string `json:"content,omitempty"`         // partial response text
 	ConversationID string `json:"conversation_id,omitempty"` // sent with "done"
 	Error          string `json:"error,omitempty"`           // sent with "error"
@@ -15,7 +15,8 @@ type ServerMessage struct {
 
 // Message types
 const (
-	MessageTypeText  = "text"
-	MessageTypeDone  = "done"
-	MessageTypeError = "error"
+	MessageTypeText       = "text"
+	MessageTypeMessageEnd = "message_end" // marks end of a logical message segment
+	MessageTypeDone       = "done"
+	MessageTypeError      = "error"
 )
