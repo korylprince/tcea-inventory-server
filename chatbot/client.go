@@ -57,9 +57,18 @@ type Usage struct {
 
 // StreamChunk represents a chunk from the streaming response
 type StreamChunk struct {
-	Content      string
-	FinishReason string
+	Content      string     // Text content delta
+	ToolCalls    []ToolCall // Tool calls (sent in one chunk usually)
+	FinishReason string     // "stop", "tool_calls", or empty
 	Err          error
+}
+
+// StreamToolCall represents a tool call delta in streaming
+type StreamToolCall struct {
+	Index    int          `json:"index"`
+	ID       string       `json:"id,omitempty"`
+	Type     string       `json:"type,omitempty"`
+	Function FunctionCall `json:"function,omitempty"`
 }
 
 // AIClient is a client for the OpenAI-compatible API
@@ -120,12 +129,16 @@ func (c *AIClient) Chat(ctx context.Context, messages []Message, tools []Tool) (
 	return &chatResp, nil
 }
 
-// ChatStream makes a streaming chat request (for final response)
-func (c *AIClient) ChatStream(ctx context.Context, messages []Message) (<-chan StreamChunk, error) {
+// ChatStreamWithTools makes a streaming chat request that handles both content and tool calls
+func (c *AIClient) ChatStreamWithTools(ctx context.Context, messages []Message, tools []Tool) (<-chan StreamChunk, error) {
 	req := ChatRequest{
 		Model:    c.model,
 		Messages: messages,
+		Tools:    tools,
 		Stream:   true,
+	}
+	if len(tools) > 0 {
+		req.ToolChoice = "auto"
 	}
 
 	body, err := json.Marshal(req)
@@ -156,6 +169,9 @@ func (c *AIClient) ChatStream(ctx context.Context, messages []Message) (<-chan S
 		defer close(ch)
 		defer resp.Body.Close()
 
+		// Accumulate tool calls across chunks
+		toolCallsMap := make(map[int]*ToolCall)
+
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -167,18 +183,65 @@ func (c *AIClient) ChatStream(ctx context.Context, messages []Message) (<-chan S
 				return
 			}
 
-			var streamResp ChatResponse
+			var streamResp struct {
+				Choices []struct {
+					Index        int    `json:"index"`
+					FinishReason string `json:"finish_reason"`
+					Delta        struct {
+						Role      string           `json:"role,omitempty"`
+						Content   *string          `json:"content,omitempty"`
+						ToolCalls []StreamToolCall `json:"tool_calls,omitempty"`
+					} `json:"delta"`
+				} `json:"choices"`
+			}
+
 			if err := json.Unmarshal([]byte(data), &streamResp); err != nil {
 				ch <- StreamChunk{Err: fmt.Errorf("failed to parse SSE data: %w", err)}
 				return
 			}
 
-			if len(streamResp.Choices) > 0 {
-				choice := streamResp.Choices[0]
-				chunk := StreamChunk{FinishReason: choice.FinishReason}
-				if choice.Delta != nil && choice.Delta.Content != nil {
-					chunk.Content = *choice.Delta.Content
+			if len(streamResp.Choices) == 0 {
+				continue
+			}
+
+			choice := streamResp.Choices[0]
+			chunk := StreamChunk{FinishReason: choice.FinishReason}
+
+			// Handle content
+			if choice.Delta.Content != nil && *choice.Delta.Content != "" {
+				chunk.Content = *choice.Delta.Content
+			}
+
+			// Handle tool calls - accumulate them
+			for _, tc := range choice.Delta.ToolCalls {
+				if _, exists := toolCallsMap[tc.Index]; !exists {
+					toolCallsMap[tc.Index] = &ToolCall{
+						ID:   tc.ID,
+						Type: tc.Type,
+						Function: FunctionCall{
+							Name:      tc.Function.Name,
+							Arguments: tc.Function.Arguments,
+						},
+					}
+				} else {
+					// Append arguments
+					toolCallsMap[tc.Index].Function.Arguments += tc.Function.Arguments
 				}
+			}
+
+			// If finish_reason is tool_calls, send the accumulated tool calls
+			if choice.FinishReason == "tool_calls" {
+				var toolCalls []ToolCall
+				for i := 0; i < len(toolCallsMap); i++ {
+					if tc, ok := toolCallsMap[i]; ok {
+						toolCalls = append(toolCalls, *tc)
+					}
+				}
+				chunk.ToolCalls = toolCalls
+			}
+
+			// Only send chunk if there's something useful
+			if chunk.Content != "" || chunk.FinishReason != "" || len(chunk.ToolCalls) > 0 {
 				ch <- chunk
 			}
 		}
@@ -189,4 +252,9 @@ func (c *AIClient) ChatStream(ctx context.Context, messages []Message) (<-chan S
 	}()
 
 	return ch, nil
+}
+
+// ChatStream makes a streaming chat request (for final response without tools)
+func (c *AIClient) ChatStream(ctx context.Context, messages []Message) (<-chan StreamChunk, error) {
+	return c.ChatStreamWithTools(ctx, messages, nil)
 }

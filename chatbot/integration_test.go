@@ -242,41 +242,64 @@ func (h *TestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	content := clientMsg.Message
 	newMessages = append(newMessages, chatbot.Message{Role: "user", Content: &content})
 
-	// Tool call loop
+	// Streaming loop with tool support
 	maxIterations := 10
 	for i := 0; i < maxIterations; i++ {
-		resp, err := h.client.Chat(r.Context(), messages, tools)
+		streamCh, err := h.client.ChatStreamWithTools(r.Context(), messages, tools)
 		if err != nil {
 			h.sendError(conn, "AI request failed: "+err.Error())
 			return
 		}
 
-		if len(resp.Choices) == 0 {
-			h.sendError(conn, "No response from AI")
-			return
-		}
+		// Accumulate the full response
+		var fullContent string
+		var toolCalls []chatbot.ToolCall
+		var finishReason string
 
-		choice := resp.Choices[0]
-		assistantMsg := choice.Message
+		for chunk := range streamCh {
+			if chunk.Err != nil {
+				h.sendError(conn, "Stream error: "+chunk.Err.Error())
+				return
+			}
 
-		if len(assistantMsg.ToolCalls) == 0 {
-			// No tool calls - send final response
-			if assistantMsg.Content != nil && *assistantMsg.Content != "" {
+			// Stream content to client immediately
+			if chunk.Content != "" {
+				fullContent += chunk.Content
 				conn.WriteJSON(chatbot.ServerMessage{
 					Type:    chatbot.MessageTypeText,
-					Content: *assistantMsg.Content,
+					Content: chunk.Content,
 				})
-				newMessages = append(newMessages, assistantMsg)
 			}
-			break
+
+			// Collect tool calls
+			if len(chunk.ToolCalls) > 0 {
+				toolCalls = chunk.ToolCalls
+			}
+
+			if chunk.FinishReason != "" {
+				finishReason = chunk.FinishReason
+			}
 		}
 
-		// Add assistant message with tool calls
+		// Build the assistant message
+		assistantMsg := chatbot.Message{Role: "assistant"}
+		if fullContent != "" {
+			assistantMsg.Content = &fullContent
+		}
+		if len(toolCalls) > 0 {
+			assistantMsg.ToolCalls = toolCalls
+		}
+
 		messages = append(messages, assistantMsg)
 		newMessages = append(newMessages, assistantMsg)
 
+		// Check if done
+		if finishReason == "stop" || len(toolCalls) == 0 {
+			break
+		}
+
 		// Execute tool calls using mock executor
-		for _, tc := range assistantMsg.ToolCalls {
+		for _, tc := range toolCalls {
 			result, err := h.executor.Execute(r.Context(), tc.Function.Name, tc.Function.Arguments)
 			if err != nil {
 				result = fmt.Sprintf(`{"error": "%s"}`, err.Error())

@@ -99,45 +99,68 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	content := clientMsg.Message
 	newMessages = append(newMessages, Message{Role: "user", Content: &content})
 
-	// Tool call loop - use non-streaming to get complete tool_calls
-	for {
-		resp, err := h.client.Chat(ctx, messages, tools)
+	// Streaming loop with tool support
+	maxIterations := 10
+	for i := 0; i < maxIterations; i++ {
+		streamCh, err := h.client.ChatStreamWithTools(ctx, messages, tools)
 		if err != nil {
 			h.sendError(conn, "AI request failed: "+err.Error())
 			return
 		}
 
-		if len(resp.Choices) == 0 {
-			h.sendError(conn, "No response from AI")
-			return
-		}
+		// Accumulate the full response
+		var fullContent string
+		var toolCalls []ToolCall
+		var finishReason string
 
-		choice := resp.Choices[0]
-		assistantMsg := choice.Message
+		for chunk := range streamCh {
+			if chunk.Err != nil {
+				h.sendError(conn, "Stream error: "+chunk.Err.Error())
+				return
+			}
 
-		// Check if we have tool calls
-		if len(assistantMsg.ToolCalls) == 0 {
-			// No tool calls - this is the final response
-			// Send it to the client (non-streamed, but we'll send it as text chunks for consistency)
-			if assistantMsg.Content != nil && *assistantMsg.Content != "" {
+			// Stream content to client immediately
+			if chunk.Content != "" {
+				fullContent += chunk.Content
 				if err := conn.WriteJSON(ServerMessage{
 					Type:    MessageTypeText,
-					Content: *assistantMsg.Content,
+					Content: chunk.Content,
 				}); err != nil {
-					log.Printf("Failed to write response: %v", err)
+					log.Printf("Failed to write chunk: %v", err)
 					return
 				}
-				newMessages = append(newMessages, assistantMsg)
 			}
-			break
+
+			// Collect tool calls
+			if len(chunk.ToolCalls) > 0 {
+				toolCalls = chunk.ToolCalls
+			}
+
+			if chunk.FinishReason != "" {
+				finishReason = chunk.FinishReason
+			}
 		}
 
-		// Add assistant message with tool calls to history
+		// Build the assistant message from the streamed response
+		assistantMsg := Message{Role: "assistant"}
+		if fullContent != "" {
+			assistantMsg.Content = &fullContent
+		}
+		if len(toolCalls) > 0 {
+			assistantMsg.ToolCalls = toolCalls
+		}
+
+		// Add to history
 		messages = append(messages, assistantMsg)
 		newMessages = append(newMessages, assistantMsg)
 
-		// Execute all tool calls in parallel
-		toolResults := h.executeToolsParallel(ctx, assistantMsg.ToolCalls)
+		// Check if we're done (no tool calls)
+		if finishReason == "stop" || len(toolCalls) == 0 {
+			break
+		}
+
+		// Execute tool calls in parallel
+		toolResults := h.executeToolsParallel(ctx, toolCalls)
 
 		// Add tool results to messages
 		for _, tr := range toolResults {
