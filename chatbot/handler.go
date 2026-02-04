@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/websocket"
 	"github.com/korylprince/tcea-inventory-server/api"
@@ -16,19 +17,21 @@ var upgrader = websocket.Upgrader{
 
 // Handler handles WebSocket chat connections
 type Handler struct {
-	store    ConversationStore
-	client   *AIClient
-	executor *ToolExecutor
-	db       *sql.DB
+	store      ConversationStore
+	client     *AIClient
+	summarizer *AIClient
+	executor   *ToolExecutor
+	db         *sql.DB
 }
 
 // NewHandler creates a new chat handler
-func NewHandler(store ConversationStore, client *AIClient, db *sql.DB) *Handler {
+func NewHandler(store ConversationStore, client *AIClient, summarizer *AIClient, db *sql.DB) *Handler {
 	return &Handler{
-		store:    store,
-		client:   client,
-		executor: NewToolExecutor(),
-		db:       db,
+		store:      store,
+		client:     client,
+		summarizer: summarizer,
+		executor:   NewToolExecutor(),
+		db:         db,
 	}
 }
 
@@ -163,6 +166,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			conn.WriteJSON(ServerMessage{Type: MessageTypeMessageEnd})
 		}
 
+		// Summarize tool calls for the user before executing (single sentence)
+		if summary, err := h.summarizeToolCalls(ctx, toolCalls); err == nil && summary != "" {
+			conn.WriteJSON(ServerMessage{
+				Type:    MessageTypeSummary,
+				Content: summary,
+			})
+			conn.WriteJSON(ServerMessage{Type: MessageTypeMessageEnd})
+
+			summaryMsg := Message{Role: "assistant", Content: &summary}
+			messages = append(messages, summaryMsg)
+			newMessages = append(newMessages, summaryMsg)
+		}
+
 		// Execute tool calls sequentially (parallel execution causes MySQL connection issues)
 		toolResults := h.executeToolsSequential(ctx, toolCalls)
 
@@ -185,6 +201,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Update conversation title summary
+	h.updateTitleSummary(r.Context(), conv, newMessages)
+
 	// Save conversation
 	if err := h.store.AddMessages(conv.ID, newMessages); err != nil {
 		log.Printf("Failed to save conversation: %v", err)
@@ -194,6 +213,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn.WriteJSON(ServerMessage{
 		Type:           MessageTypeDone,
 		ConversationID: conv.ID,
+		TitleSummary:   conv.Title,
 	})
 }
 
@@ -244,4 +264,70 @@ func (h *Handler) sendError(conn *websocket.Conn, msg string) {
 
 func strPtr(s string) *string {
 	return &s
+}
+
+func (h *Handler) summarizeToolCalls(ctx context.Context, calls []ToolCall) (string, error) {
+	if h.summarizer == nil || len(calls) == 0 {
+		return FallbackToolSummary(calls), nil
+	}
+
+	summaryMessages := []Message{
+		{Role: "system", Content: strPtr(ToolSummaryPrompt())},
+		{Role: "user", Content: strPtr(BuildToolSummaryInput(calls))},
+	}
+
+	resp, err := h.summarizer.Chat(ctx, summaryMessages, nil)
+	if err != nil {
+		return FallbackToolSummary(calls), nil
+	}
+	if len(resp.Choices) == 0 || resp.Choices[0].Message.Content == nil {
+		return FallbackToolSummary(calls), nil
+	}
+	summary := strings.TrimSpace(*resp.Choices[0].Message.Content)
+	if summary == "" {
+		return FallbackToolSummary(calls), nil
+	}
+	return summary, nil
+}
+
+func (h *Handler) updateTitleSummary(ctx context.Context, conv *Conversation, newMessages []Message) {
+	if h.summarizer == nil || conv == nil {
+		return
+	}
+
+	var convoMessages []Message
+	for _, msg := range conv.Messages {
+		if msg.Role == "tool" {
+			continue
+		}
+		convoMessages = append(convoMessages, msg)
+	}
+	for _, msg := range newMessages {
+		if msg.Role == "tool" {
+			continue
+		}
+		convoMessages = append(convoMessages, msg)
+	}
+
+	summaryMessages := []Message{
+		{Role: "system", Content: strPtr(TitleSummaryPrompt())},
+		{Role: "user", Content: strPtr(BuildTitleSummaryInput(conv.Title, convoMessages))},
+	}
+
+	resp, err := h.summarizer.Chat(ctx, summaryMessages, nil)
+	if err != nil || len(resp.Choices) == 0 || resp.Choices[0].Message.Content == nil {
+		if fallback := FallbackTitleSummary(convoMessages); fallback != "" {
+			conv.Title = fallback
+		}
+		return
+	}
+
+	title := strings.TrimSpace(*resp.Choices[0].Message.Content)
+	if title == "" {
+		if fallback := FallbackTitleSummary(convoMessages); fallback != "" {
+			conv.Title = fallback
+		}
+		return
+	}
+	conv.Title = title
 }

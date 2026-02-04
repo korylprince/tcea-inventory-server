@@ -69,6 +69,7 @@ type FunctionCall struct {
 type Conversation struct {
 	ID        string
 	Messages  []Message
+	Title     string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

@@ -11,12 +11,14 @@ import (
 
 // ChatConfig holds configuration for the chat handler
 type ChatConfig struct {
-	AIEndpoint    string
-	AIModel       string
-	CacheMaxBytes int
+	AIEndpoint        string
+	AIModel           string
+	SummaryAIEndpoint string
+	SummaryAIModel    string
+	CacheMaxBytes     int
 }
 
-//NewRouter returns an HTTP router for the HTTP API
+// NewRouter returns an HTTP router for the HTTP API
 func NewRouter(w io.Writer, s SessionStore, db *sql.DB, chatCfg *ChatConfig) http.Handler {
 
 	//construct middleware
@@ -53,7 +55,8 @@ func NewRouter(w io.Writer, s SessionStore, db *sql.DB, chatCfg *ChatConfig) htt
 	if chatCfg != nil {
 		store := chatbot.NewLRUStore(chatCfg.CacheMaxBytes)
 		client := chatbot.NewAIClient(chatCfg.AIEndpoint, chatCfg.AIModel)
-		chatHandler := chatbot.NewHandler(store, client, db)
+		summaryClient := chatbot.NewAIClient(chatCfg.SummaryAIEndpoint, chatCfg.SummaryAIModel)
+		chatHandler := chatbot.NewHandler(store, client, summaryClient, db)
 		r.Path("/chat").Handler(wsAuthMiddleware(chatHandler, s, db, w))
 	}
 

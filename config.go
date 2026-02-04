@@ -19,6 +19,8 @@ type Config struct {
 
 	AIEndpoint                string //AI backend URL; required
 	AIModel                   string //AI model name; required
+	SummaryAIEndpoint         string //Summary AI backend URL; required
+	SummaryAIModel            string //Summary AI model name; required
 	ConversationCacheMaxBytes int    //Max size of conversation LRU cache in bytes; default: 10485760 (10MB)
 }
 
@@ -46,6 +48,14 @@ func init() {
 
 	if config.AIModel == "" {
 		log.Fatalln("INVENTORY_AIMODEL must be configured")
+	}
+
+	if config.SummaryAIEndpoint == "" {
+		log.Fatalln("INVENTORY_SUMMARYAIENDPOINT must be configured")
+	}
+
+	if config.SummaryAIModel == "" {
+		log.Fatalln("INVENTORY_SUMMARYAIMODEL must be configured")
 	}
 
 	if config.ConversationCacheMaxBytes == 0 {

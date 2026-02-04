@@ -178,19 +178,25 @@ func (e *MockToolExecutor) Execute(ctx context.Context, name string, arguments s
 
 // TestHandler wraps the real handler but uses mock tool executor
 type TestHandler struct {
-	store    chatbot.ConversationStore
-	client   *chatbot.AIClient
-	executor *MockToolExecutor
-	mockDB   *MockDB
+	store      chatbot.ConversationStore
+	client     *chatbot.AIClient
+	summarizer *chatbot.AIClient
+	executor   *MockToolExecutor
+	mockDB     *MockDB
 }
 
-func NewTestHandler(aiEndpoint, aiModel string) *TestHandler {
+func strPtr(s string) *string {
+	return &s
+}
+
+func NewTestHandler(aiEndpoint, aiModel, summaryEndpoint, summaryModel string) *TestHandler {
 	mockDB := NewMockDB()
 	return &TestHandler{
-		store:    chatbot.NewLRUStore(10 * 1024 * 1024),
-		client:   chatbot.NewAIClient(aiEndpoint, aiModel),
-		executor: &MockToolExecutor{db: mockDB},
-		mockDB:   mockDB,
+		store:      chatbot.NewLRUStore(10 * 1024 * 1024),
+		client:     chatbot.NewAIClient(aiEndpoint, aiModel),
+		summarizer: chatbot.NewAIClient(summaryEndpoint, summaryModel),
+		executor:   &MockToolExecutor{db: mockDB},
+		mockDB:     mockDB,
 	}
 }
 
@@ -303,6 +309,23 @@ func (h *TestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			conn.WriteJSON(chatbot.ServerMessage{Type: chatbot.MessageTypeMessageEnd})
 		}
 
+		// Summarize tool calls and stream as separate message
+		if h.summarizer != nil {
+			summaryMessages := []chatbot.Message{
+				{Role: "system", Content: strPtr(chatbot.ToolSummaryPrompt())},
+				{Role: "user", Content: strPtr(chatbot.BuildToolSummaryInput(toolCalls))},
+			}
+			resp, err := h.summarizer.Chat(r.Context(), summaryMessages, nil)
+			if err == nil && len(resp.Choices) > 0 && resp.Choices[0].Message.Content != nil {
+				summary := strings.TrimSpace(*resp.Choices[0].Message.Content)
+				if summary != "" {
+					conn.WriteJSON(chatbot.ServerMessage{Type: chatbot.MessageTypeSummary, Content: summary})
+					conn.WriteJSON(chatbot.ServerMessage{Type: chatbot.MessageTypeMessageEnd})
+					newMessages = append(newMessages, chatbot.Message{Role: "assistant", Content: &summary})
+				}
+			}
+		}
+
 		// Execute tool calls using mock executor
 		for _, tc := range toolCalls {
 			result, err := h.executor.Execute(r.Context(), tc.Function.Name, tc.Function.Arguments)
@@ -323,9 +346,37 @@ func (h *TestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	h.store.AddMessages(conv.ID, newMessages)
 
+	// Update title summary
+	var convoMessages []chatbot.Message
+	for _, msg := range conv.Messages {
+		if msg.Role == "tool" {
+			continue
+		}
+		convoMessages = append(convoMessages, msg)
+	}
+	for _, msg := range newMessages {
+		if msg.Role == "tool" {
+			continue
+		}
+		convoMessages = append(convoMessages, msg)
+	}
+	if h.summarizer != nil {
+		summaryMessages := []chatbot.Message{
+			{Role: "system", Content: strPtr(chatbot.TitleSummaryPrompt())},
+			{Role: "user", Content: strPtr(chatbot.BuildTitleSummaryInput(conv.Title, convoMessages))},
+		}
+		if resp, err := h.summarizer.Chat(r.Context(), summaryMessages, nil); err == nil && len(resp.Choices) > 0 && resp.Choices[0].Message.Content != nil {
+			title := strings.TrimSpace(*resp.Choices[0].Message.Content)
+			if title != "" {
+				conv.Title = title
+			}
+		}
+	}
+
 	conn.WriteJSON(chatbot.ServerMessage{
 		Type:           chatbot.MessageTypeDone,
 		ConversationID: conv.ID,
+		TitleSummary:   conv.Title,
 	})
 }
 
@@ -351,10 +402,12 @@ func (h *TestHandler) sendError(conn *websocket.Conn, msg string) {
 func TestWebSocketConnection(t *testing.T) {
 	endpoint := os.Getenv("AI_ENDPOINT")
 	model := os.Getenv("AI_MODEL")
-	if endpoint == "" || model == "" {
-		t.Skip("AI_ENDPOINT or AI_MODEL not set; skipping integration test")
+	summaryEndpoint := os.Getenv("SUMMARY_AI_ENDPOINT")
+	summaryModel := os.Getenv("SUMMARY_AI_MODEL")
+	if endpoint == "" || model == "" || summaryEndpoint == "" || summaryModel == "" {
+		t.Skip("AI_ENDPOINT/AI_MODEL/SUMMARY_AI_ENDPOINT/SUMMARY_AI_MODEL not set; skipping integration test")
 	}
-	handler := NewTestHandler(endpoint, model)
+	handler := NewTestHandler(endpoint, model, summaryEndpoint, summaryModel)
 
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -379,6 +432,7 @@ func TestWebSocketConnection(t *testing.T) {
 	var textReceived bool
 	var doneReceived bool
 	var conversationID string
+	var textChunkCount int
 
 	for {
 		var msg chatbot.ServerMessage
@@ -387,11 +441,12 @@ func TestWebSocketConnection(t *testing.T) {
 			t.Fatalf("Failed to read response: %v", err)
 		}
 
-		t.Logf("Received message type=%s content=%q error=%q", msg.Type, msg.Content, msg.Error)
-
 		switch msg.Type {
+		case chatbot.MessageTypeSummary:
+			textReceived = true
 		case chatbot.MessageTypeText:
 			textReceived = true
+			textChunkCount++
 		case chatbot.MessageTypeDone:
 			doneReceived = true
 			conversationID = msg.ConversationID
@@ -413,6 +468,9 @@ func TestWebSocketConnection(t *testing.T) {
 	if conversationID == "" {
 		t.Error("Conversation ID is empty")
 	}
+	if textChunkCount < 2 {
+		t.Errorf("Expected streaming text chunks, got %d", textChunkCount)
+	}
 
 	t.Logf("Test passed! Conversation ID: %s", conversationID)
 }
@@ -420,10 +478,12 @@ func TestWebSocketConnection(t *testing.T) {
 func TestToolCallExecution(t *testing.T) {
 	endpoint := os.Getenv("AI_ENDPOINT")
 	model := os.Getenv("AI_MODEL")
-	if endpoint == "" || model == "" {
-		t.Skip("AI_ENDPOINT or AI_MODEL not set; skipping integration test")
+	summaryEndpoint := os.Getenv("SUMMARY_AI_ENDPOINT")
+	summaryModel := os.Getenv("SUMMARY_AI_MODEL")
+	if endpoint == "" || model == "" || summaryEndpoint == "" || summaryModel == "" {
+		t.Skip("AI_ENDPOINT/AI_MODEL/SUMMARY_AI_ENDPOINT/SUMMARY_AI_MODEL not set; skipping integration test")
 	}
-	handler := NewTestHandler(endpoint, model)
+	handler := NewTestHandler(endpoint, model, summaryEndpoint, summaryModel)
 
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -447,6 +507,7 @@ func TestToolCallExecution(t *testing.T) {
 	var fullResponse string
 	var doneReceived bool
 	var messageCount int
+	var textChunkCount int
 
 	for {
 		var msg chatbot.ServerMessage
@@ -455,14 +516,15 @@ func TestToolCallExecution(t *testing.T) {
 			t.Fatalf("Failed to read response: %v", err)
 		}
 
-		t.Logf("Received: type=%s content=%q", msg.Type, truncate(msg.Content, 100))
-
 		switch msg.Type {
+		case chatbot.MessageTypeSummary:
+			fullResponse += msg.Content
+			messageCount++
 		case chatbot.MessageTypeText:
 			fullResponse += msg.Content
+			textChunkCount++
 		case chatbot.MessageTypeMessageEnd:
 			messageCount++
-			t.Logf("--- Message %d complete (tool calls being executed) ---", messageCount)
 		case chatbot.MessageTypeDone:
 			doneReceived = true
 		case chatbot.MessageTypeError:
@@ -474,7 +536,10 @@ func TestToolCallExecution(t *testing.T) {
 		}
 	}
 
-	t.Logf("Full response (%d intermediate messages): %s", messageCount, fullResponse)
+	t.Logf("Full response (%d messages): %s", messageCount+1, truncate(fullResponse, 300))
+	if textChunkCount < 2 {
+		t.Errorf("Expected streaming text chunks, got %d", textChunkCount)
+	}
 
 	// The response should mention something about devices
 	if !strings.Contains(strings.ToLower(fullResponse), "device") &&
@@ -486,10 +551,12 @@ func TestToolCallExecution(t *testing.T) {
 func TestConversationContinuity(t *testing.T) {
 	endpoint := os.Getenv("AI_ENDPOINT")
 	model := os.Getenv("AI_MODEL")
-	if endpoint == "" || model == "" {
-		t.Skip("AI_ENDPOINT or AI_MODEL not set; skipping integration test")
+	summaryEndpoint := os.Getenv("SUMMARY_AI_ENDPOINT")
+	summaryModel := os.Getenv("SUMMARY_AI_MODEL")
+	if endpoint == "" || model == "" || summaryEndpoint == "" || summaryModel == "" {
+		t.Skip("AI_ENDPOINT/AI_MODEL/SUMMARY_AI_ENDPOINT/SUMMARY_AI_MODEL not set; skipping integration test")
 	}
-	handler := NewTestHandler(endpoint, model)
+	handler := NewTestHandler(endpoint, model, summaryEndpoint, summaryModel)
 
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -558,10 +625,12 @@ func TestConversationContinuity(t *testing.T) {
 func TestStatsQuery(t *testing.T) {
 	endpoint := os.Getenv("AI_ENDPOINT")
 	model := os.Getenv("AI_MODEL")
-	if endpoint == "" || model == "" {
-		t.Skip("AI_ENDPOINT or AI_MODEL not set; skipping integration test")
+	summaryEndpoint := os.Getenv("SUMMARY_AI_ENDPOINT")
+	summaryModel := os.Getenv("SUMMARY_AI_MODEL")
+	if endpoint == "" || model == "" || summaryEndpoint == "" || summaryModel == "" {
+		t.Skip("AI_ENDPOINT/AI_MODEL/SUMMARY_AI_ENDPOINT/SUMMARY_AI_MODEL not set; skipping integration test")
 	}
-	handler := NewTestHandler(endpoint, model)
+	handler := NewTestHandler(endpoint, model, summaryEndpoint, summaryModel)
 
 	server := httptest.NewServer(handler)
 	defer server.Close()
@@ -584,22 +653,27 @@ func TestStatsQuery(t *testing.T) {
 
 	var fullResponse string
 	var messageCount int
+	var textChunkCount int
 	for {
 		var msg chatbot.ServerMessage
 		if err := conn.ReadJSON(&msg); err != nil {
 			t.Fatalf("Failed to read: %v", err)
 		}
 
-		t.Logf("Received: type=%s", msg.Type)
-
 		switch msg.Type {
+		case chatbot.MessageTypeSummary:
+			fullResponse += msg.Content
+			messageCount++
 		case chatbot.MessageTypeText:
 			fullResponse += msg.Content
+			textChunkCount++
 		case chatbot.MessageTypeMessageEnd:
 			messageCount++
-			t.Logf("--- Message %d complete ---", messageCount)
 		case chatbot.MessageTypeDone:
-			t.Logf("Stats response (%d messages): %s", messageCount+1, truncate(fullResponse, 500))
+			t.Logf("Stats response (%d messages): %s", messageCount+1, truncate(fullResponse, 300))
+			if textChunkCount < 2 {
+				t.Errorf("Expected streaming text chunks, got %d", textChunkCount)
+			}
 			return
 		case chatbot.MessageTypeError:
 			t.Fatalf("Error: %s", msg.Error)
@@ -610,10 +684,12 @@ func TestStatsQuery(t *testing.T) {
 func TestEmptyMessage(t *testing.T) {
 	endpoint := os.Getenv("AI_ENDPOINT")
 	model := os.Getenv("AI_MODEL")
-	if endpoint == "" || model == "" {
-		t.Skip("AI_ENDPOINT or AI_MODEL not set; skipping integration test")
+	summaryEndpoint := os.Getenv("SUMMARY_AI_ENDPOINT")
+	summaryModel := os.Getenv("SUMMARY_AI_MODEL")
+	if endpoint == "" || model == "" || summaryEndpoint == "" || summaryModel == "" {
+		t.Skip("AI_ENDPOINT/AI_MODEL/SUMMARY_AI_ENDPOINT/SUMMARY_AI_MODEL not set; skipping integration test")
 	}
-	handler := NewTestHandler(endpoint, model)
+	handler := NewTestHandler(endpoint, model, summaryEndpoint, summaryModel)
 
 	server := httptest.NewServer(handler)
 	defer server.Close()

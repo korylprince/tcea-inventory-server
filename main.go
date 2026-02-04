@@ -21,9 +21,11 @@ func main() {
 	s := httpapi.NewMemorySessionStore(time.Minute * time.Duration(config.SessionExpiration))
 
 	chatCfg := &httpapi.ChatConfig{
-		AIEndpoint:    config.AIEndpoint,
-		AIModel:       config.AIModel,
-		CacheMaxBytes: config.ConversationCacheMaxBytes,
+		AIEndpoint:        config.AIEndpoint,
+		AIModel:           config.AIModel,
+		SummaryAIEndpoint: config.SummaryAIEndpoint,
+		SummaryAIModel:    config.SummaryAIModel,
+		CacheMaxBytes:     config.ConversationCacheMaxBytes,
 	}
 
 	r := httpapi.NewRouter(os.Stdout, s, db, chatCfg)

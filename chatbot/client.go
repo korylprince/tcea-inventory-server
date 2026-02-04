@@ -192,6 +192,11 @@ func (c *AIClient) ChatStreamWithTools(ctx context.Context, messages []Message, 
 						Content   *string          `json:"content,omitempty"`
 						ToolCalls []StreamToolCall `json:"tool_calls,omitempty"`
 					} `json:"delta"`
+					Message *struct {
+						Role      string     `json:"role,omitempty"`
+						Content   *string    `json:"content,omitempty"`
+						ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+					} `json:"message,omitempty"`
 				} `json:"choices"`
 			}
 
@@ -213,6 +218,16 @@ func (c *AIClient) ChatStreamWithTools(ctx context.Context, messages []Message, 
 			}
 
 			// Handle tool calls - accumulate them
+			if choice.Message != nil && len(choice.Message.ToolCalls) > 0 {
+				for idx, tc := range choice.Message.ToolCalls {
+					index := idx
+					toolCallsMap[index] = &ToolCall{
+						ID:       tc.ID,
+						Type:     tc.Type,
+						Function: tc.Function,
+					}
+				}
+			}
 			for _, tc := range choice.Delta.ToolCalls {
 				if _, exists := toolCallsMap[tc.Index]; !exists {
 					toolCallsMap[tc.Index] = &ToolCall{
@@ -229,8 +244,8 @@ func (c *AIClient) ChatStreamWithTools(ctx context.Context, messages []Message, 
 				}
 			}
 
-			// If finish_reason is tool_calls, send the accumulated tool calls
-			if choice.FinishReason == "tool_calls" {
+			// If finish_reason is tool_calls (or stop with tool calls), send the accumulated tool calls
+			if choice.FinishReason == "tool_calls" || (choice.FinishReason == "stop" && len(toolCallsMap) > 0) {
 				var toolCalls []ToolCall
 				for i := 0; i < len(toolCallsMap); i++ {
 					if tc, ok := toolCallsMap[i]; ok {

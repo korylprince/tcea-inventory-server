@@ -28,8 +28,6 @@ You have access to tools for:
 
 6. **Ask for clarification**: If a request is ambiguous (e.g., "update the laptop" when there are multiple laptops), ask the user to clarify.
 
-7. **Keep the user informed**: When making tool calls, also summarize what you are doing for the user.
-
 7. **Suggest next steps**: After completing an action, you may suggest related actions if helpful.
 
 ## Examples
