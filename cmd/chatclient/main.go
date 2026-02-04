@@ -31,6 +31,7 @@ type serverMessage struct {
 	Type           string `json:"type"`
 	Content        string `json:"content,omitempty"`
 	ConversationID string `json:"conversation_id,omitempty"`
+	TitleSummary   string `json:"title_summary,omitempty"`
 	Error          string `json:"error,omitempty"`
 }
 
@@ -108,6 +109,8 @@ func main() {
 
 		// Read response
 		fmt.Print("Assistant: ")
+		var currentChunk strings.Builder
+		var lastWasSummary bool
 		for {
 			var msg serverMessage
 			if err := conn.ReadJSON(&msg); err != nil {
@@ -119,15 +122,29 @@ func main() {
 			}
 
 			switch msg.Type {
+			case "summary":
+				fmt.Printf("\nSummary: %s\n", msg.Content)
+				currentChunk.Reset()
+				lastWasSummary = true
 			case "text":
 				fmt.Print(msg.Content)
+				currentChunk.WriteString(msg.Content)
 				os.Stdout.Sync() // Force flush for real-time streaming
 			case "message_end":
 				fmt.Println() // New line between logical messages
+				trimmed := strings.TrimSpace(currentChunk.String())
+				lastWasSummary = trimmed != "" && strings.HasSuffix(trimmed, ".")
+				currentChunk.Reset()
 			case "done":
 				fmt.Println()
 				currentConvID = msg.ConversationID
 				fmt.Printf("(Conversation ID: %s)\n", currentConvID)
+				if msg.TitleSummary != "" {
+					fmt.Printf("Title: %s\n", msg.TitleSummary)
+				}
+				if lastWasSummary {
+					fmt.Println()
+				}
 			case "error":
 				fmt.Printf("\nError: %s\n", msg.Error)
 			}
